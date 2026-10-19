@@ -1,0 +1,11 @@
+datasets>=2.19.0
+openai>=1.30.0
+pandas>=2.0.0
+python-dotenv>=1.0.0
+
+# The SDK imports phoenix.evals.models; this is the version in its uv.lock.
+arize-phoenix-evals==2.7.0
+
+# Arize currently distributes Prompt Learning from its GitHub repository.
+# Note: the current upstream package declares Python >=3.12.
+prompt-learning-enhanced @ git+https://github.com/Arize-ai/prompt-learning.git
