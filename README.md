@@ -1,199 +1,205 @@
-# Self-Improving LLM Prompts with Arize Prompt Learning
+[日本語](README.md) | [한국어](README.ko.md)
 
-Hugging Face 데이터셋, OpenAI 모델, Arize Prompt Learning을 사용해 LLM
-프롬프트를 자연어 피드백으로 반복 개선하는 실험 저장소입니다.
+# Arize Prompt Learningによる自己改善型LLMプロンプト
 
-두 가지 과제를 실험합니다.
+Hugging Faceのデータセット、OpenAIモデル、Arize Prompt Learningを使い、
+自然言語フィードバックをもとにLLMプロンプトを反復的に改善する実験リポジトリです。
 
-1. `dair-ai/emotion`을 이용한 감정 분류
-2. `kdave/Indian_Financial_News`를 이용한 금융 뉴스 요약
+次の2つのタスクを検証します。
 
-공통 파이프라인은 다음과 같습니다.
+1. **dair-ai/emotion**を使用した感情分類
+2. **kdave/Indian_Financial_News**を使用した金融ニュース要約
 
-```text
-현재 프롬프트로 Agent 실행
+共通のパイプラインは以下のとおりです。
+
+~~~text
+現在のプロンプトでAgentを実行
           ↓
-결과 평가 및 자연어 피드백 생성
+結果を評価し、自然言語フィードバックを生成
           ↓
 Arize PromptLearningOptimizer.optimize()
           ↓
-GPT-4o가 개선 프롬프트 생성
+GPT-4oが改善プロンプトを生成
           ↓
-다음 Iteration에서 재평가
-```
+次のIterationで再評価
+~~~
 
-## 준비
+## セットアップ
 
-현재 Arize Prompt Learning의 공식 저장소 패키지는 Python 3.12 이상을
-요구합니다. 이 프로젝트의 스크립트 자체는 Python 3.10 문법과 호환되지만,
-최신 SDK를 함께 설치하려면 Python 3.12+ 가상환경을 사용하세요.
+現在、Arize Prompt Learningの公式リポジトリ版パッケージはPython 3.12以上を
+必要とします。本プロジェクトのスクリプト自体はPython 3.10の構文と互換性が
+ありますが、最新SDKと一緒にインストールする場合はPython 3.12以上の
+仮想環境を使用してください。
 
-```bash
+~~~bash
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 export OPENAI_API_KEY="sk-..."
-```
+~~~
 
-## 실행
+## 実行方法
 
-기본 설정은 상위 30개 샘플, 최대 3회 평가, 목표 정확도 95%입니다.
+デフォルト設定では、先頭30サンプル、最大3回の評価、目標精度95%を使用します。
 
-```bash
+~~~bash
 python self_improving_emotion_classifier.py
-```
+~~~
 
-비용을 줄여 빠르게 확인하려면 다음처럼 실행할 수 있습니다.
+APIコストを抑えて短時間で確認する場合は、次のように実行できます。
 
-```bash
+~~~bash
 python self_improving_emotion_classifier.py --samples 5 --iterations 1
-```
+~~~
 
-최종 프롬프트는 기본적으로 `optimized_prompt.txt`에 저장됩니다. `--output`,
-`--iterations`, `--target-accuracy` 옵션으로 설정을 변경할 수 있습니다.
+最終プロンプトはデフォルトで **optimized_prompt.txt** に保存されます。
+**--output**、**--iterations**、**--target-accuracy** オプションで設定を変更できます。
 
-## 실험 1: 감정 분류 결과
+## 実験1：感情分類の結果
 
-빠른 검증을 위해 `dair-ai/emotion`의 첫 5개 샘플로 실행한 결과, 초기
-프롬프트는 2개를 맞혀 정확도 40%를 기록했습니다.
+簡易検証として **dair-ai/emotion** の先頭5サンプルを実行したところ、
+初期プロンプトは2件に正解し、精度は40%でした。
 
-| 입력의 핵심 표현 | 정답 | 초기 예측 | 결과 |
+| 入力の主な表現 | 正解 | 初期予測 | 結果 |
 |---|---|---|---|
-| `humiliated` | sadness | sadness | 정답 |
-| `hopeless`에서 `hopeful`로 변화 | sadness | joy | 오답 |
-| `greedy`, `wrong` | anger | sadness | 오답 |
-| 벽난로를 회상하는 문장 | love | sadness | 오답 |
-| `grouchy` | anger | anger | 정답 |
+| **humiliated** | sadness | sadness | 正解 |
+| **hopeless**から**hopeful**への変化 | sadness | joy | 不正解 |
+| **greedy**、**wrong** | anger | sadness | 不正解 |
+| 暖炉を回想する文 | love | sadness | 不正解 |
+| **grouchy** | anger | anger | 正解 |
 
-초기 모델은 문장 전체의 감정 대신 `hopeful`, `wrong`, `nostalgic` 같은 일부
-단어에 민감하게 반응했으며, `joy`, `anger`, `love`를 `sadness`와 혼동했습니다.
+初期モデルは文全体の感情よりも、**hopeful**、**wrong**、**nostalgic**などの
+一部の単語に強く反応し、**joy**、**anger**、**love**を**sadness**と
+混同していました。
 
-Arize Prompt Learning은 피드백을 바탕으로 다음 지침을 추가했습니다.
+Arize Prompt Learningはフィードバックをもとに、次の指示を追加しました。
 
-```text
+~~~text
 Consider the overall emotional tone of the text rather than focusing on
 isolated words.
-```
+~~~
 
-또한 세 개의 오답을 포함한 실제 샘플을 Few-shot 예제로 추가했습니다. 생성된
-전체 프롬프트는
-[`artifacts/emotion/optimized_prompt.txt`](artifacts/emotion/optimized_prompt.txt)에서
-확인할 수 있습니다.
+さらに、3件の誤答を含む実際のサンプルをFew-shot例として追加しました。
+生成されたプロンプト全体は
+[artifacts/emotion/optimized_prompt.txt](artifacts/emotion/optimized_prompt.txt)
+で確認できます。
 
-이 실행에서는 개선 프롬프트를 독립된 Test 데이터로 다시 검증하지 않았습니다.
-따라서 40% 이후의 일반화 성능이 개선됐다고 결론 내리지는 않습니다. 추후에는
-최적화용 Train과 평가용 Test를 분리해야 합니다.
+この実行では、改善プロンプトを独立したTestデータで再検証していません。
+そのため、40%から汎化性能が向上したとは結論づけていません。今後は
+最適化用Trainデータと評価用Testデータを分離する必要があります。
 
-## 금융 뉴스 요약 파이프라인
+## 金融ニュース要約パイプライン
 
-`self_improving_financial_summarizer.py`는 금융 기사를 GPT-4o-mini로 요약하고,
-GPT-4o Evaluator의 자연어 비평을 이용해 Arize Prompt Learning으로 프롬프트를
-개선합니다. 기본 실행은 20개 기사와 3회의 평가 회차를 사용하므로 먼저 아래의
-저비용 확인 명령을 권장합니다.
+**self_improving_financial_summarizer.py** は金融記事をGPT-4o-miniで要約し、
+GPT-4o Evaluatorの自然言語による批評を使って、Arize Prompt Learningで
+プロンプトを改善します。デフォルト実行では20記事を3回評価するため、
+まずは次の低コストな確認コマンドを推奨します。
 
-```bash
+~~~bash
 python self_improving_financial_summarizer.py \
   --samples 2 \
   --iterations 2 \
   --evaluator-model gpt-4o-mini
-```
+~~~
 
-전체 기본 설정으로 실행하려면 다음 명령을 사용합니다.
+デフォルト設定ですべて実行する場合は、次のコマンドを使用します。
 
-```bash
+~~~bash
 python self_improving_financial_summarizer.py
-```
+~~~
 
-최종 프롬프트는 `financial_optimized_prompt.txt`, 회차별 프롬프트·평가 결과·
-점수 이력·Arize 메타 프롬프트는 `financial_results/`에 저장됩니다.
+最終プロンプトは **financial_optimized_prompt.txt** に、Iterationごとの
+プロンプト・評価結果・スコア履歴・Arizeメタプロンプトは
+**financial_results/** に保存されます。
 
-## 실험 2: 금융 뉴스 요약 결과
+## 実験2：金融ニュース要約の結果
 
-금융 기사 20개를 대상으로 3회 평가했습니다. GPT-4o Evaluator는 각 요약을
-다음 세 기준으로 1~5점 평가하고 구체적인 자연어 피드백을 생성했습니다.
+金融記事20件を対象に3回評価しました。GPT-4o Evaluatorは各要約を
+次の3基準で1〜5点に評価し、具体的な自然言語フィードバックを生成しました。
 
-- 주요 재무 수치 포함 여부
-- 불필요한 내용이 없는 간결성
-- 원문에 없는 내용을 만들지 않는 충실성
+- 主要な財務数値が含まれているか
+- 不要な内容がなく簡潔か
+- 原文にない内容を生成していないかという忠実性
 
-### 회차별 점수
+### Iterationごとのスコア
 
-| Iteration | 종합 점수 | 재무 수치 | 간결성 | 충실성 |
+| Iteration | 総合スコア | 財務数値 | 簡潔性 | 忠実性 |
 |---|---:|---:|---:|---:|
 | 1 | 83.67 | 3.85 | 3.95 | 4.75 |
 | 2 | 83.67 | 4.00 | 3.95 | 4.60 |
 | 3 | 83.33 | 3.95 | 3.90 | 4.65 |
 
-Iteration 2에서는 주요 재무 수치, 경제적 요인, 영향과 시사점을 강조하고 근거
-없는 내용을 제외하라는 지침이 추가됐습니다. 그 결과 재무 수치 점수는
-`3.85 → 4.00`으로 상승했지만 충실성이 `4.75 → 4.60`으로 하락해 종합
-점수는 동일했습니다.
+Iteration 2では、主要な財務数値、経済的要因、影響と示唆を強調し、
+根拠のない内容を除外する指示が追加されました。その結果、財務数値の
+スコアは **3.85 → 4.00** に上昇しましたが、忠実性は
+**4.75 → 4.60** に低下し、総合スコアは変わりませんでした。
 
-Iteration 3에서는 금융시장 및 경제정책의 중요한 변화를 강조하는 지침이
-추가됐지만, 종합 점수는 `83.33`으로 소폭 하락했습니다.
+Iteration 3では、金融市場と経済政策における重要な変化を強調する指示が
+追加されましたが、総合スコアは **83.33** にわずかに低下しました。
 
-### 개선되지 않은 원인
+### 改善しなかった原因
 
-이번 실험에서는 재무 수치를 강조하는 지침이 모든 기사에 동일하게 적용되면서
-부작용이 발생했습니다.
+今回の実験では、財務数値を強調する指示をすべての記事に同じように適用した
+ことで、副作用が発生しました。
 
-- 수치가 많은 기사에서는 주변 수치와 기업 소식까지 과도하게 나열함
-- 수치가 없는 기사에서도 재무 지표가 존재하는 것처럼 구조화함
-- 정보량이 증가하면서 간결성과 충실성이 낮아짐
-- Evaluator가 원문에 수치가 없는 경우에도 재무 수치 점수를 낮게 부여함
+- 数値の多い記事では、周辺の数値や企業ニュースまで過剰に列挙した
+- 数値のない記事でも、財務指標が存在するかのように構造化した
+- 情報量の増加により、簡潔性と忠実性が低下した
+- Evaluatorは原文に数値がない場合でも財務数値のスコアを低く付けた
 
-예를 들어 한 샘플은 `66.67 → 46.67 → 73.33`, 다른 샘플은
-`66.67 → 66.67 → 40.00`으로 변했습니다. 전체 평균만 보면 작은 변화지만,
-개별 기사에서는 프롬프트 변경으로 큰 성능 하락이 발생했습니다.
+たとえば、あるサンプルは **66.67 → 46.67 → 73.33**、別のサンプルは
+**66.67 → 66.67 → 40.00** と変化しました。全体平均では小さな変化でも、
+個別の記事ではプロンプト変更によって大幅な性能低下が発生しました。
 
-Iteration 1과 2가 같은 최고 점수를 기록했기 때문에, 동점일 때 먼저 평가된
-프롬프트를 유지하는 현재 로직은 초기 프롬프트를 최종 결과로 선택했습니다.
+Iteration 1と2が同じ最高スコアだったため、同点の場合に先に評価された
+プロンプトを維持する現在のロジックでは、初期プロンプトが最終結果として
+選択されました。
 
-```text
+~~~text
 Summarize the following financial news article:
 
 Article: {article}
 
 Summary:
-```
+~~~
 
-따라서 이번 금융 요약 실험의 결론은 “프롬프트가 개선됐다”가 아니라, 재무
-수치를 더 잘 포함하도록 최적화됐지만 다른 평가 기준과의 트레이드오프로 전체
-성능 향상에는 실패했다는 것입니다.
+したがって、今回の金融要約実験の結論は「プロンプトが改善した」ではなく、
+財務数値をより多く含めるよう最適化された一方、他の評価基準との
+トレードオフにより、総合性能の向上には至らなかったということです。
 
-회차별 프롬프트와 전체 집계 점수는
-[`artifacts/financial/`](artifacts/financial/)에서 확인할 수 있습니다.
+Iterationごとのプロンプトと集計スコアは
+[artifacts/financial/](artifacts/financial/)で確認できます。
 
-## 두 실험에서 얻은 결론
+## 2つの実験から得られた結論
 
-| 구분 | 감정 분류 | 금융 뉴스 요약 |
+| 区分 | 感情分類 | 金融ニュース要約 |
 |---|---|---|
-| 평가 방식 | 정답 레이블과 직접 비교 | GPT-4o Evaluator |
-| 피드백 생성 | Python 비교 로직 | Evaluator LLM |
-| 주요 개선 | 전체 감정 판단 규칙과 Few-shot 예제 | 재무 수치와 충실성 관련 규칙 |
-| 주요 한계 | 동일 데이터 재사용 및 과적합 | Evaluator 편향과 평가 기준 간 트레이드오프 |
-| 확인된 결과 | 구체적인 개선 프롬프트 생성 | 전체 점수는 개선되지 않음 |
+| 評価方法 | 正解ラベルとの直接比較 | GPT-4o Evaluator |
+| フィードバック生成 | Pythonの比較ロジック | Evaluator LLM |
+| 主な改善 | 文全体の感情を判断するルールとFew-shot例 | 財務数値と忠実性に関するルール |
+| 主な限界 | 同じデータの再利用と過学習 | Evaluatorのバイアスと評価基準間のトレードオフ |
+| 確認できた結果 | 具体的な改善プロンプトを生成 | 総合スコアは改善しなかった |
 
-Prompt Learning은 성능 향상을 보장하는 도구가 아니라, 실패 원인을 자연어
-규칙으로 변환하고 프롬프트 수정 과정을 자동화하는 도구에 가깝습니다. 특히
-자유 형식 생성 과제에서는 Optimizer보다 먼저 Evaluator가 사람의 판단과
-일치하는지 검증해야 합니다.
+Prompt Learningは性能向上を保証するツールではなく、失敗原因を自然言語の
+ルールへ変換し、プロンプトの修正プロセスを自動化するツールに近いものです。
+特に自由形式の生成タスクでは、Optimizerより先に、Evaluatorの判断が
+人間の判断と一致するかを検証する必要があります。
 
-신뢰할 수 있는 실험을 위해 다음 개선이 필요합니다.
+信頼できる実験にするため、今後は次の改善が必要です。
 
-- Train, Validation, Test 데이터 분리
-- 원문에 재무 수치가 없을 때 `not_applicable` 처리
-- 평가 기준별 독립 Evaluator 사용
-- 일부 샘플에 대한 사람 평가와 LLM 평가 비교
-- 점수가 낮아진 프롬프트를 적용하지 않는 롤백
-- API 비용, 토큰 수, 처리 시간 기록
+- Train、Validation、Testデータの分離
+- 原文に財務数値がない場合の **not_applicable** 処理
+- 評価基準ごとの独立したEvaluator
+- 一部サンプルにおける人手評価とLLM評価の比較
+- スコアが低下したプロンプトを適用しないロールバック
+- APIコスト、トークン数、処理時間の記録
 
-## 공개 실험 산출물
+## 公開している実験成果物
 
-재현성과 결과 비교를 위해 공개 가능한 프롬프트 및 집계 점수는 `artifacts/`에
-보관합니다.
+再現性と結果比較のため、公開可能なプロンプトと集計スコアは
+**artifacts/** に保存しています。
 
-```text
+~~~text
 artifacts/
 ├── emotion/
 │   └── optimized_prompt.txt
@@ -203,11 +209,12 @@ artifacts/
     ├── iteration_2_prompt.txt
     ├── iteration_3_prompt.txt
     └── iteration_history.csv
-```
+~~~
 
-기사 원문과 참고 요약이 포함된 `iteration_N_results.csv` 및 Arize가 생성한
-메타프롬프트는 데이터 재배포를 피하기 위해 저장소에서 제외합니다.
+記事原文と参照要約を含む **iteration_N_results.csv**、およびArizeが生成した
+メタプロンプトは、データの再配布を避けるためリポジトリから除外しています。
 
-이는 결과를 숨기기 위한 것이 아닙니다. 저장소에는 회차별 프롬프트와 집계
-점수를 공개해 실험 과정과 결론을 확인할 수 있게 하고, 제3자 기사 전문이
-중복 저장된 원시 실행 파일만 제외합니다.
+これは結果を隠すためではありません。リポジトリではIterationごとの
+プロンプトと集計スコアを公開し、実験プロセスと結論を確認できるように
+しています。除外しているのは、第三者の記事全文を重複保存した生の実行
+ファイルのみです。
