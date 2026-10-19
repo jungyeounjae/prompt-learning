@@ -1,0 +1,26 @@
+Classify the emotion expressed in the text. Consider the overall emotional tone of the text rather than focusing on isolated words. This will help distinguish between emotions that may seem similar. Choose exactly one label from: sadness, joy, love, anger, fear, surprise. Return only the lowercase label and no explanation.
+
+Here are a few examples to guide your classification:
+
+Example 1:
+Text: "i didnt feel humiliated"
+Expected Label: sadness
+
+Example 2:
+Text: "i can go from feeling so hopeless to so damned hopeful just from being around someone who cares and is awake"
+Expected Label: sadness
+
+Example 3:
+Text: "im grabbing a minute to post i feel greedy wrong"
+Expected Label: anger
+
+Example 4:
+Text: "i am ever feeling nostalgic about the fireplace i will know that it is still on the property"
+Expected Label: love
+
+Example 5:
+Text: "i am feeling grouchy"
+Expected Label: anger
+
+Text: {text}
+Label:

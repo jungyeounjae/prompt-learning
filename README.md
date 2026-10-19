@@ -56,3 +56,23 @@ python self_improving_financial_summarizer.py
 
 최종 프롬프트는 `financial_optimized_prompt.txt`, 회차별 프롬프트·평가 결과·
 점수 이력·Arize 메타 프롬프트는 `financial_results/`에 저장됩니다.
+
+## 공개 실험 산출물
+
+재현성과 결과 비교를 위해 공개 가능한 프롬프트 및 집계 점수는 `artifacts/`에
+보관합니다.
+
+```text
+artifacts/
+├── emotion/
+│   └── optimized_prompt.txt
+└── financial/
+    ├── optimized_prompt.txt
+    ├── iteration_1_prompt.txt
+    ├── iteration_2_prompt.txt
+    ├── iteration_3_prompt.txt
+    └── iteration_history.csv
+```
+
+기사 원문과 참고 요약이 포함된 `iteration_N_results.csv` 및 Arize가 생성한
+메타프롬프트는 데이터 재배포를 피하기 위해 저장소에서 제외합니다.

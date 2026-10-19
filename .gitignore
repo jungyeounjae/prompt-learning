@@ -2,8 +2,8 @@
 .venv/
 __pycache__/
 *.py[cod]
-optimized_prompt.txt
-financial_optimized_prompt.txt
-financial_results/
-metaprompt.txt
-qiita_arize_prompt_learning.md
+/optimized_prompt.txt
+/financial_optimized_prompt.txt
+/financial_results/
+/metaprompt.txt
+/qiita_arize_prompt_learning.md

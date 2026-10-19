@@ -1,0 +1,4 @@
+iteration,overall_score,financial_figures,conciseness,faithfulness,prompt_file,results_file
+1,83.6667,3.85,3.95,4.75,iteration_1_prompt.txt,iteration_1_results.csv
+2,83.6667,4.0,3.95,4.6,iteration_2_prompt.txt,iteration_2_results.csv
+3,83.3333,3.95,3.9,4.65,iteration_3_prompt.txt,iteration_3_results.csv

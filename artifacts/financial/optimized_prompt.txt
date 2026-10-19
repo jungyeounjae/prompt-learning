@@ -1,0 +1,5 @@
+Summarize the following financial news article:
+
+Article: {article}
+
+Summary:

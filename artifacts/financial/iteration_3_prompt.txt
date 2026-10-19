@@ -1,0 +1,5 @@
+Summarize the following financial news article by focusing on the most critical financial figures, significant economic factors, and key impacts or implications. Provide concise and precise information, ensuring the summary accurately represents the source content and avoids unnecessary details. Ensure the main context is maintained without introducing any unsupported claims or inaccuracies. Highlight all relevant financial data and contextual details essential for understanding the financial situation or development. Exclude speculative or unrelated content. Pay special attention to capturing the most significant shifts in financial markets or economic policies.
+
+Article: {article}
+
+Summary:
