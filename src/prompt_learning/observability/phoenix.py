@@ -35,17 +35,48 @@ from prompt_learning.config import ExperimentConfig
 
 
 logger = logging.getLogger(__name__)
-_exporting = ContextVar("prompt_learning_phoenix_exporting", default=False)
+_dependency_operation = ContextVar("prompt_learning_phoenix_dependency_operation", default=False)
+_DEPENDENCY_LOG_NAMES = (
+    "",  # Some dependency/factory diagnostics use the root logger directly.
+    "phoenix.client.utils.config",
+    "phoenix.client.utils.parse_env_headers",
+    "opentelemetry.util.re",
+    "opentelemetry.exporter.otlp.proto.http._common",
+    "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+)
 
 
-class _ExportLogFilter(logging.Filter):
+class _DependencyLogFilter(logging.Filter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.warned = False
+
     def filter(self, record: logging.LogRecord) -> bool:
-        # The OTLP transport otherwise logs response bodies and exception text.
-        # Suppress only our current export, preserving other exporters' logging.
-        return not _exporting.get()
+        if not _dependency_operation.get():
+            return True
+        self.warned |= record.levelno >= logging.WARNING
+        return False
 
 
-_export_log_filter = _ExportLogFilter()
+@contextmanager
+def _quiet_dependency_logs() -> Iterator[_DependencyLogFilter]:
+    """Hide only the active SDK operation, restoring every logger afterwards.
+
+    Client header parsing and OTLP transports may log credentials before they
+    return or raise. Use a unique filter per operation so overlapping calls can
+    remove their own filters without disturbing other operations or callers.
+    """
+    scoped_filter = _DependencyLogFilter()
+    dependency_loggers = [logging.getLogger(name) for name in _DEPENDENCY_LOG_NAMES]
+    token = _dependency_operation.set(True)
+    try:
+        for dependency_logger in dependency_loggers:
+            dependency_logger.addFilter(scoped_filter)
+        yield scoped_filter
+    finally:
+        for dependency_logger in dependency_loggers:
+            dependency_logger.removeFilter(scoped_filter)
+        _dependency_operation.reset(token)
 
 
 @dataclass(frozen=True)
@@ -249,17 +280,12 @@ def _build_exporter() -> SpanExporter:
         endpoint=os.environ.get("PHOENIX_OTLP_ENDPOINT", _endpoint() + "/v1/traces"),
         headers=headers, timeout=5,
     )
-    logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter").addFilter(_export_log_filter)
-
     class CheckedProcessor(SpanProcessor):
         def on_end(self, span):
             # SimpleSpanProcessor logs and swallows export errors. Check the transport
             # directly so the adapter owns the single sanitized, actionable warning.
-            token = _exporting.set(True)
-            try:
+            with _quiet_dependency_logs():
                 result = transport.export((span,))
-            finally:
-                _exporting.reset(token)
             if result != SpanExportResult.SUCCESS:
                 raise RuntimeError("Phoenix span transport failed")
 
@@ -301,8 +327,15 @@ def build_observer(
     if not enabled:
         return NoOpObserver()
     try:
-        exporter = (exporter_factory or _build_exporter)()
-        client = (client_factory or _build_client)()
+        with _quiet_dependency_logs() as diagnostics:
+            exporter = (exporter_factory or _build_exporter)()
+            client = (client_factory or _build_client)()
+        if diagnostics.warned:
+            logger.warning(
+                "Phoenix initialization ignored invalid configuration; check the Phoenix "
+                "endpoint and URL-encode PHOENIX_CLIENT_HEADERS values. "
+                "Dependency diagnostics were omitted to protect credentials.",
+            )
         return PhoenixObserver(exporter, client)
     except Exception:
         logger.warning(

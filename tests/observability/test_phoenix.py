@@ -2,6 +2,8 @@
 
 from contextlib import contextmanager
 from dataclasses import replace
+import logging
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -279,3 +281,41 @@ def test_mislabeled_raw_text_cannot_be_exported_as_hashes(config, caplog):
     assert client.dataset_payloads == []
     assert len(caplog.records) == 1
     assert_private_absent([exporter.spans, caplog.text])
+
+
+def test_real_client_malformed_headers_do_not_leak_during_initialization(config, monkeypatch, caplog):
+    pytest.importorskip("phoenix.client")
+    malformed = "authorization=Bearer " + PRIVATE[-1]
+    monkeypatch.setenv("PHOENIX_CLIENT_HEADERS", malformed)
+    dependency_logger = logging.getLogger("phoenix.client.utils.parse_env_headers")
+    original_filters = tuple(dependency_logger.filters)
+    original_root_filters = tuple(logging.getLogger().filters)
+
+    tracing = build_observer(config, exporter_factory=Exporter)
+    with tracing.start_run({}):
+        result = 42
+    assert result == 42
+    assert_private_absent(caplog.text)
+    assert malformed not in caplog.text
+    assert len(caplog.records) == 1
+    assert "header" in caplog.text.lower()
+    assert tuple(dependency_logger.filters) == original_filters
+    assert tuple(logging.getLogger().filters) == original_root_filters
+    assert os.environ["PHOENIX_CLIENT_HEADERS"] == malformed
+    dependency_logger.warning("outside adapter remains visible")
+    assert "outside adapter remains visible" in caplog.text
+    if not isinstance(tracing, NoOpObserver):
+        tracing.client._client.close()
+
+
+def test_real_client_preserves_valid_encoded_headers(config, monkeypatch, caplog):
+    pytest.importorskip("phoenix.client")
+    encoded = "authorization=Bearer%20" + PRIVATE[-1] + ",x-project=project%20one"
+    monkeypatch.setenv("PHOENIX_CLIENT_HEADERS", encoded)
+    tracing = build_observer(config, exporter_factory=Exporter)
+    assert not isinstance(tracing, NoOpObserver)
+    assert tracing.client._client.headers["authorization"] == "Bearer " + PRIVATE[-1]
+    assert tracing.client._client.headers["x-project"] == "project one"
+    assert os.environ["PHOENIX_CLIENT_HEADERS"] == encoded
+    assert not caplog.records
+    tracing.client._client.close()
