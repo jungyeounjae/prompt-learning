@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 기존 두 실험 스크립트를 Train/Validation/Test 분리, 검증 게이트, 로컬 artifact, 선택적 Phoenix 관측을 갖춘 재현 가능한 CLI 포트폴리오 프로젝트로 재구성한다.
+**Goal:** 기존 두 실험 스크립트를 Train/Validation/Test 분리, 검증 게이트, 로컬 artifact, 선택적 Phoenix 관측을 갖춘 재현 가능한 CLI 실험 도구로 재구성한다.
 
 **Architecture:** `src/prompt_learning` 패키지에서 데이터 adapter, 과제 실행기, evaluator, 후보 선택기, artifact writer와 observability adapter를 분리하고 `ExperimentRunner`가 이들을 조합한다. Prompt Learning은 Train 피드백으로 후보만 생성하고, Validation gate가 채택을 결정하며, Test는 최종 프롬프트에 한 번만 사용한다. Phoenix는 실패해도 실험 결과를 바꾸지 않는 선택적 adapter로 둔다.
 
@@ -50,7 +50,7 @@
 - `configs/`: 두 과제의 실행 가능한 기본 설정
 - `tests/`: 네트워크 없는 단위 및 통합 테스트
 - `docker-compose.yml`: 로컬 Phoenix 서버
-- `README.ko.md`, `README.md`: 포트폴리오 설명과 재현 절차
+- `README.ko.md`, `README.md`: 문제, 설계와 재현 절차
 
 ### Task 1: Package Foundation, Shared Models, and Config Validation
 
@@ -579,19 +579,19 @@ git add self_improving_emotion_classifier.py self_improving_financial_summarizer
 git commit -m "refactor: route legacy scripts through shared pipeline"
 ```
 
-### Task 12: Portfolio Documentation and Verified Example Artifacts
+### Task 12: User Documentation and Verified Example Artifacts
 
 **Files:**
 - Modify: `README.ko.md`
 - Modify: `README.md`
 - Modify: `requirements.txt`
 - Create: `docs/architecture.md`
-- Create: `artifacts/portfolio-summary.md`
+- Create: `artifacts/experiment-summary.md`
 - Test: `tests/test_documentation.py`
 
 **Interfaces:**
 - Consumes: actual CLI output, test results, curated experiment metrics and Phoenix screenshots supplied by a real run
-- Produces: reproducible portfolio narrative in Korean and Japanese plus architecture reference
+- Produces: Korean and Japanese user documentation and an architecture reference for reproducible experiments
 
 - [ ] **Step 1: Write failing documentation checks**
 
@@ -603,17 +603,17 @@ Run: `python -m pytest tests/test_documentation.py -v`
 
 Expected: FAIL because the current README documents the old scripts and result claims.
 
-- [ ] **Step 3: Write architecture and portfolio documentation**
+- [ ] **Step 3: Write architecture and user documentation**
 
 Lead with the problem, guarded optimization design and measured outcome. Document local Phoenix startup, Phoenix-disabled execution, exact CLI commands, artifact meanings, evaluation limitations and why rejected candidates are valuable evidence.
 
 - [ ] **Step 4: Run a low-cost real emotion and financial experiment**
 
-Run with explicit small portfolio-validation configs derived from the defaults while preserving valid split minima. Record the command, model identifiers, UTC timestamp, dataset revisions, cost, latency and result. Never commit raw third-party article/reference text or credentials.
+Run with explicit small validation configs derived from the defaults while preserving valid split minima. Record the command, model identifiers, UTC timestamp, dataset revisions, cost, latency and result. Never commit raw third-party article/reference text or credentials.
 
 - [ ] **Step 5: Capture curated evidence**
 
-Copy only aggregate metrics, prompt versions, hashes, regression summaries and redacted Phoenix screenshots into committed portfolio artifacts. If the real run cannot be performed due to credentials, do not invent metrics; leave the existing historical results clearly labeled as legacy and document the exact reproduction command.
+Copy only aggregate metrics, prompt versions, hashes, regression summaries and redacted Phoenix screenshots into committed experiment artifacts. If the real run cannot be performed due to credentials, do not invent metrics; leave the existing historical results clearly labeled as legacy and document the exact reproduction command.
 
 - [ ] **Step 6: Run final verification**
 
@@ -630,8 +630,8 @@ Expected: tests PASS, package builds, Compose configuration validates, and no wh
 - [ ] **Step 7: Commit**
 
 ```bash
-git add README.ko.md README.md requirements.txt docs/architecture.md artifacts/portfolio-summary.md tests/test_documentation.py
-git commit -m "docs: present guarded prompt optimization portfolio"
+git add README.ko.md README.md requirements.txt docs/architecture.md artifacts/experiment-summary.md tests/test_documentation.py
+git commit -m "docs: document guarded prompt optimization experiments"
 ```
 
 ## Implementation Completion Checklist
