@@ -21,6 +21,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=9.1"]
+phoenix = [
+  "arize-phoenix-client==3.5.0",
+  "opentelemetry-sdk==1.45.1",
+  "opentelemetry-exporter-otlp-proto-http==1.45.1",
+  "openinference-semantic-conventions==0.1.41",
+]
 
 [project.scripts]
 prompt-learning = "prompt_learning.cli:main"
