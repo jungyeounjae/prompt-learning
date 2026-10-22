@@ -1,0 +1,17 @@
+# Start: docker compose up -d
+# UI/HTTP: http://localhost:${PHOENIX_HTTP_PORT:-6006}; gRPC: ${PHOENIX_GRPC_PORT:-4317}
+# Override PHOENIX_IMAGE with a tested release/digest for repeatable deployments.
+# Set PHOENIX_COLLECTOR_ENDPOINT in the application if changing the HTTP port.
+services:
+  phoenix:
+    image: ${PHOENIX_IMAGE:-arizephoenix/phoenix:latest}
+    ports:
+      - "127.0.0.1:${PHOENIX_HTTP_PORT:-6006}:6006"
+      - "127.0.0.1:${PHOENIX_GRPC_PORT:-4317}:4317"
+    environment:
+      PHOENIX_WORKING_DIR: /data
+    volumes:
+      - phoenix-data:/data
+
+volumes:
+  phoenix-data:
