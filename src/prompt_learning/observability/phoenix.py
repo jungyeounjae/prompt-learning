@@ -118,14 +118,16 @@ _HASH_FIELDS = frozenset({"input_hash", "prompt_hash"})
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}\Z")
 _NUMBER_FIELDS = frozenset({
     "iteration", "prompt_version", "seed", "input_tokens", "output_tokens", "total_tokens",
-    "cost_usd", "latency_ms", "accuracy", "macro_f1", "mean_length_score",
-    "mean_compression_score", "mean_rouge_l_f1", "mean_faithfulness",
+    "cost_usd", "latency_ms", "accuracy", "macro_f1", "invalid_output_rate", "overall_score", "mean_length_score",
+    "mean_compression_score", "mean_rouge_l_f1", "mean_faithfulness", "mean_conciseness",
     "mean_financial_figures", "failure_count", "failure_rate", "severe_hallucination_count",
     "financial_figures_not_applicable_count", "example_count", "regression_count",
 })
 _SPAN_NAMES = frozenset({
     "experiment", "dataset", "inference", "evaluation", "optimization", "selection",
     "baseline", "candidate", "final", "train", "validation", "test",
+    "experiment_run", "dataset_load", "baseline_validation", "train_inference",
+    "feedback_generation", "prompt_optimization", "candidate_validation", "final_test",
 })
 
 
@@ -192,7 +194,8 @@ class PhoenixObserver:
     @contextmanager
     def _span(self, name: str, attributes: Mapping[str, object]) -> Iterator[RunSpan]:
         try:
-            safe_name = name if name in _SPAN_NAMES else "span-" + sha256(name.encode()).hexdigest()
+            safe_name = (name if name in _SPAN_NAMES or re.fullmatch(r"iteration_[0-9]+", name)
+                         else "span-" + sha256(name.encode()).hexdigest())
             manager = self.exporter.start_span(safe_name, _safe_attributes(attributes))
             manager.__enter__()
         except Exception:
@@ -210,7 +213,7 @@ class PhoenixObserver:
                 self._warn("span export")
 
     def start_run(self, attributes: Mapping[str, object]) -> ContextManager[RunSpan]:
-        return self._span("experiment", attributes)
+        return self._span("experiment_run", attributes)
 
     def sync_dataset(
         self, name: str, version: str, examples: Sequence[DatasetExample],

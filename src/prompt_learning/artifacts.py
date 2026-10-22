@@ -177,6 +177,19 @@ class ArtifactWriter:
         _atomic_write(path / "regressions.csv", _csv_bytes(("iteration", *_REGRESSION_FIELDS[task]), regressions))
         self._history, self._regressions = history, regressions
 
+    def write_optimization_error(self, iteration: int, reason: str) -> None:
+        """Archive a failed generation attempt without inventing a candidate."""
+        path, _ = self._active()
+        if iteration < 0 or any(row["iteration"] == iteration for row in self._history):
+            raise ValueError("Iteration must be non-negative and unique")
+        category = reason if reason in ("empty_output", "missing_placeholder") else "invalid_candidate"
+        history = [*self._history, {
+            "iteration": iteration, "prompt_version": "", "prompt_hash": "", "accepted": False,
+            "reasons": f"optimization_error:{category}",
+        }]
+        _atomic_write(path / "iteration_history.csv", _csv_bytes(_HISTORY_FIELDS, history))
+        self._history = history
+
     def finalize(
         self, manifest: RunManifest, baseline_prompt: PromptCandidate | str,
         selected_prompt: PromptCandidate | str, validation_metrics: MetricResult,

@@ -139,7 +139,7 @@ def test_observer_records_required_safe_attributes(config):
         with run.child(PRIVATE[0], {}):
             pass
     assert exporter.spans[0][1] == safe
-    assert exporter.spans[1] == ("evaluation", safe, ("experiment",))
+    assert exporter.spans[1] == ("evaluation", safe, ("experiment_run",))
     assert_private_absent(exporter.spans)
 
 
@@ -319,3 +319,23 @@ def test_real_client_preserves_valid_encoded_headers(config, monkeypatch, caplog
     assert os.environ["PHOENIX_CLIENT_HEADERS"] == encoded
     assert not caplog.records
     tracing.client._client.close()
+
+
+def test_approved_experiment_span_names_are_preserved(config):
+    exporter = Exporter()
+    tracing = observer(config, exporter)
+    with tracing.start_run({}) as root:
+        for name in ("dataset_load", "baseline_validation", "iteration_0", "iteration_12",
+                     "train_inference", "feedback_generation", "prompt_optimization",
+                     "candidate_validation", "selection", "final_test"):
+            with root.child(name, {}):
+                pass
+        for name in ("iteration_-1", "iteration_private article", "iteration_1_extra"):
+            with root.child(name, {}):
+                pass
+    assert [name for name, _, _ in exporter.spans[:11]] == [
+        "experiment_run", "dataset_load", "baseline_validation", "iteration_0", "iteration_12",
+        "train_inference", "feedback_generation", "prompt_optimization",
+        "candidate_validation", "selection", "final_test",
+    ]
+    assert all(name.startswith("span-") for name, _, _ in exporter.spans[11:])

@@ -124,3 +124,20 @@ def test_write_failure_propagates_and_preserves_existing_file(tmp_path, monkeypa
         writer.write_iteration(0, PromptCandidate("Classify {text}", 0, 0), emotion_metrics(), None)
     assert original.read_text(encoding="utf-8") == "old contents"
     assert not [file for file in path.iterdir() if file.name.endswith(".tmp")]
+
+
+@pytest.mark.parametrize("reason", ["empty_output", "missing_placeholder", "DO NOT PUBLISH OUTPUT"])
+def test_optimization_error_history_has_no_fabricated_candidate_or_raw_text(tmp_path, reason):
+    writer = ArtifactWriter(tmp_path)
+    path = writer.start_run("emotion", "run-1")
+    writer.write_optimization_error(1, reason)
+    with (path / "iteration_history.csv").open(newline="") as file:
+        history = list(csv.DictReader(file))
+    category = reason if reason in ("empty_output", "missing_placeholder") else "invalid_candidate"
+    assert history == [{"iteration": "1", "prompt_version": "", "prompt_hash": "",
+                        "accepted": "False", "reasons": f"optimization_error:{category}"}]
+    assert list(path.iterdir()) == [path / "iteration_history.csv"]
+    with pytest.raises(ValueError):
+        writer.write_optimization_error(1, reason)
+    with pytest.raises(ValueError):
+        writer.write_iteration(1, PromptCandidate("Classify {text}", 1, 1), emotion_metrics(), None)
