@@ -75,28 +75,32 @@ def parse_summary_evaluation(raw: str) -> SummaryEvaluation:
     return SummaryEvaluation(*dimensions)
 
 
-_NUMBER = r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
-_CURRENCY = r"(?:US\$|USD|EUR|GBP|INR|JPY|CAD|AUD|CNY|CHF|HKD|SGD|Rs\.?|rupees?|dollars?|euros?|pounds?|yen|[$€£¥₹])"
-_SCALE = r"(?:thousand|million|billion|trillion|crore|lakh|bn|mn)"
+_NUMBER = r"[+-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)"
+_CURRENCY = r"(?:US\$|A\$|USD|EUR|GBP|INR|JPY|CAD|AUD|CNY|CHF|HKD|SGD|Rs\.?|rupees?|dollars?|euros?|pounds?|yen|[$€£¥₹])"
+_SCALE = r"(?:thousand|million|billion|trillion|crore|lakh|bn|mn|k|m|b|t|cr)"
+# Consume the whole attached suffix, even if its scale is unknown. Without
+# this, e.g. $100widgets would silently compare equal to a supported $100.
+_MONEY_AMOUNT = rf"(?P<number>{_NUMBER})(?:\s*(?P<scale>{_SCALE})(?!\w)|(?P<suffix>[^\W\d]\w*))?"
 _PREFIX_MONEY = re.compile(
-    rf"(?<!\w)(?P<currency>{_CURRENCY})\s*(?P<number>{_NUMBER})(?:\s*(?P<scale>{_SCALE})\b)?",
+    rf"(?<!\w)(?P<currency>{_CURRENCY})\s*{_MONEY_AMOUNT}(?!\w|[.,]\d)",
     re.IGNORECASE,
 )
 _SUFFIX_MONEY = re.compile(
-    rf"(?<![\w.,])(?P<number>{_NUMBER})(?:\s*(?P<scale>{_SCALE})\b)?\s*(?P<currency>{_CURRENCY})(?!\w)",
+    rf"(?<![\w.,]){_MONEY_AMOUNT}\s*(?P<currency>{_CURRENCY})(?!\w)",
     re.IGNORECASE,
 )
 _PERCENT = re.compile(rf"(?<![\w.,])(?P<number>{_NUMBER})\s*(?:%|percent\b|per\s+cent\b|pct\b)", re.IGNORECASE)
 _MULTIPLIERS = {"thousand": 1000, "million": 10**6, "billion": 10**9,
-                "trillion": 10**12, "crore": 10**7, "lakh": 10**5, "bn": 10**9, "mn": 10**6}
-_CURRENCY_ALIASES = {"$": "usd", "us$": "usd", "dollar": "usd", "dollars": "usd",
+                "trillion": 10**12, "crore": 10**7, "lakh": 10**5, "bn": 10**9, "mn": 10**6,
+                "k": 1000, "m": 10**6, "b": 10**9, "t": 10**12, "cr": 10**7}
+_CURRENCY_ALIASES = {"$": "usd", "us$": "usd", "a$": "aud", "dollar": "usd", "dollars": "usd",
                      "€": "eur", "euro": "eur", "euros": "eur",
                      "£": "gbp", "pound": "gbp", "pounds": "gbp",
                      "₹": "inr", "rs": "inr", "rs.": "inr", "rupee": "inr", "rupees": "inr",
                      "¥": "jpy", "yen": "jpy"}
 
 
-def _financial_expressions(text: str) -> set[tuple[str, Decimal]]:
+def _financial_expressions(text: str) -> set[tuple[str, Decimal, str]]:
     expressions = set()
     for pattern in (_PREFIX_MONEY, _SUFFIX_MONEY):
         for match in pattern.finditer(text):
@@ -104,9 +108,10 @@ def _financial_expressions(text: str) -> set[tuple[str, Decimal]]:
             currency = _CURRENCY_ALIASES.get(currency, currency)
             amount = Decimal(match["number"].replace(",", ""))
             scale = (match["scale"] or "").casefold()
-            expressions.add((currency, amount * _MULTIPLIERS.get(scale, 1)))
+            suffix = (match.groupdict().get("suffix") or "").casefold()
+            expressions.add((currency, amount * _MULTIPLIERS.get(scale, 1), suffix))
     for match in _PERCENT.finditer(text):
-        expressions.add(("percent", Decimal(match["number"].replace(",", ""))))
+        expressions.add(("percent", Decimal(match["number"].replace(",", "")), ""))
     return expressions
 
 

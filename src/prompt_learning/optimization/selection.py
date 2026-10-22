@@ -81,22 +81,32 @@ def _exact_summary_score(row) -> Fraction:
     return Fraction(str(row["overall_score"]))
 
 
+def _exact_financial_aggregate(result: MetricResult) -> dict:
+    """Use row evidence for comparisons; keep aggregate-only callers supported."""
+    aggregate = dict(result.aggregate)
+    frame = result.per_example
+    if frame.empty:
+        return aggregate
+    dimensions = {"financial_figures_score", "conciseness_score", "faithfulness_score"}
+    if dimensions.issubset(frame.columns):
+        aggregate["overall_score"] = sum(
+            (_exact_summary_score(row) for row in frame.to_dict("records")), Fraction(0),
+        ) / len(frame)
+    for name in ("financial_figures", "conciseness", "faithfulness"):
+        column, metric = f"{name}_score", f"mean_{name}"
+        if column in frame and metric in aggregate:
+            applicable = frame[column].dropna()
+            aggregate[metric] = (sum((Fraction(str(value)) for value in applicable), Fraction(0))
+                                 / len(applicable) if len(applicable) else None)
+    return aggregate
+
+
 def select_financial_candidate(
     baseline: MetricResult, candidate: MetricResult,
     baseline_prompt: str, candidate_prompt: str,
 ) -> SelectionDecision:
     """Reject aggregate regressions and excessive large drops on matched IDs."""
-    current, proposed = baseline.aggregate, candidate.aggregate
-    reasons = []
-    for metric in ("overall_score", "mean_faithfulness"):
-        if proposed[metric] < current[metric]:
-            reasons.append(f"{metric}_decreased")
-    if proposed["severe_hallucination_count"] > current["severe_hallucination_count"]:
-        reasons.append("severe_hallucination_count_increased")
-
     before, after = baseline.per_example, candidate.per_example
-    regressions = []
-    matched, large_drops = 0, 0
     for frame in (before, after):
         if frame.empty:
             continue
@@ -105,6 +115,17 @@ def select_financial_candidate(
                 raise ValueError(f"Missing required column: {column}")
         if frame.example_id.isna().any() or frame.example_id.duplicated().any():
             raise ValueError("example_id must be non-null and unique")
+
+    current, proposed = _exact_financial_aggregate(baseline), _exact_financial_aggregate(candidate)
+    reasons = []
+    for metric in ("overall_score", "mean_faithfulness"):
+        if proposed[metric] < current[metric]:
+            reasons.append(f"{metric}_decreased")
+    if proposed["severe_hallucination_count"] > current["severe_hallucination_count"]:
+        reasons.append("severe_hallucination_count_increased")
+
+    regressions = []
+    matched, large_drops = 0, 0
     if not before.empty and not after.empty:
         by_id = after.set_index("example_id")
         for row in before.itertuples(index=False):

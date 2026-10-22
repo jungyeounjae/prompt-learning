@@ -124,3 +124,73 @@ def test_real_evaluations_reject_mathematically_exact_twenty_point_drop():
     assert not decision.accepted
     assert decision.reasons == ("large_score_drop_rate_exceeds_0.10",)
     assert decision.regressions[0]["delta"] == -20
+
+
+@pytest.mark.parametrize("reverse_baseline", [False, True])
+@pytest.mark.parametrize(("baseline_prompt", "candidate_prompt", "accepted"), [
+    ("long baseline prompt", "short", True), ("short", "long candidate prompt", False),
+])
+def test_reordered_real_evaluations_are_exact_metric_ties(
+    reverse_baseline, baseline_prompt, candidate_prompt, accepted,
+):
+    import json
+
+    from prompt_learning.evaluators.summarization import evaluate_summaries
+    from prompt_learning.optimization.selection import select_financial_candidate
+
+    scores = [(1, 1, 1), (1, 1, 2), (5, 4, 5), (5, 5, 5), (5, 5, 5)]
+    data = pd.DataFrame([{"example_id": str(i), "article": str(i),
+                          "reference_summary": "Reference", "output": "x" * 40}
+                         for i in range(5)])
+
+    def evaluator(*, article, **kwargs):
+        return json.dumps({
+            name: {"score": score, "label": "rated", "rationale": "Source-based assessment."}
+            for name, score in zip(("financial_figures", "conciseness", "faithfulness"), scores[int(article)])
+        })
+
+    normal = evaluate_summaries(data, evaluator)
+    reversed_result = evaluate_summaries(data.iloc[::-1], evaluator)
+    baseline, candidate = (reversed_result, normal) if reverse_baseline else (normal, reversed_result)
+    assert baseline.aggregate["overall_score"] != candidate.aggregate["overall_score"]
+    decision = select_financial_candidate(baseline, candidate, baseline_prompt, candidate_prompt)
+    assert decision.accepted is accepted
+    assert decision.reasons == () and decision.regressions == ()
+
+
+def test_faithfulness_comparison_uses_exact_underlying_scores():
+    from prompt_learning.optimization.selection import select_financial_candidate
+
+    row = {"example_id": "a", "overall_score": 80, "financial_figures_score": 4,
+           "conciseness_score": 4, "faithfulness_score": 4}
+    baseline = metrics(faithfulness=4.000000000000001, rows=[row])
+    candidate = metrics(faithfulness=4, rows=[row])
+    decision = select_financial_candidate(baseline, candidate, "long baseline", "short")
+    assert decision.accepted and decision.reasons == ()
+
+
+@pytest.mark.parametrize(("candidate_row", "reason"), [
+    ({"financial_figures_score": 3}, "overall_score_decreased"),
+    ({"financial_figures_score": 5, "faithfulness_score": 3}, "mean_faithfulness_decreased"),
+])
+def test_exact_comparisons_reject_real_decreases_even_if_aggregate_floats_are_equal(candidate_row, reason):
+    from prompt_learning.optimization.selection import select_financial_candidate
+
+    before = {"example_id": "a", "overall_score": 80, "financial_figures_score": 4,
+              "conciseness_score": 4, "faithfulness_score": 4}
+    after = {**before, **candidate_row}
+    decision = select_financial_candidate(metrics(rows=[before]), metrics(rows=[after]), "long baseline", "short")
+    assert not decision.accepted and reason in decision.reasons
+
+
+def test_exact_aggregate_preserves_zero_for_deterministic_failure():
+    from prompt_learning.optimization.selection import select_financial_candidate
+
+    row = {"example_id": "a", "overall_score": 100, "financial_figures_score": 5,
+           "conciseness_score": 5, "faithfulness_score": 5}
+    failed = {**row, "overall_score": 0, "evaluation_failed": True,
+              "deterministic_errors": ("summary_length_out_of_range",)}
+    decision = select_financial_candidate(metrics(100, 5, rows=[row]),
+                                         metrics(0, 5, rows=[failed]), "long baseline", "short")
+    assert not decision.accepted and "overall_score_decreased" in decision.reasons
+    assert decision.regressions[0]["delta"] == -100

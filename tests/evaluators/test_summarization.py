@@ -117,6 +117,19 @@ def test_length_check_includes_40_and_800(length, valid):
     ("Revenue rose 5 pct.", "15 pct", True),
     ("Revenue reached USD 1 million.", "$1,000,000", False),
     ("Profit was EUR 10 million.", "10 million euros", False),
+    ("Revenue reached $100.", "$100k", True),
+    ("Revenue reached $100,000.", "$100k", False),
+    ("Revenue reached $100.", "$100widgets", True),
+    ("Revenue reached $100 widgets.", "$100widgets", True),
+    ("Revenue reached 100 dollars.", "100widgets dollars", True),
+    ("Revenue reached $100k.", "$100kextra", True),
+    ("Revenue reached $100 million.", "$100m", False),
+    ("Revenue reached $100.", "$100.5m", True),
+    ("Revenue reached A$100.", "A$200", True),
+    ("Revenue reached AUD 200.", "A$200", False),
+    ("Revenue rose 5%.", ".5%", True),
+    ("Revenue rose 0.5%.", ".5%", False),
+    ("Profit was USD 0.5 million.", "$ .5m", False),
 ])
 def test_unsupported_currency_or_percentage_is_severe(article, claim, unsupported):
     from prompt_learning.evaluators.summarization import evaluate_summaries
