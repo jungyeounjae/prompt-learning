@@ -1,9 +1,20 @@
 """Guardrails for emotion prompt candidates."""
 
 from decimal import Decimal
+from fractions import Fraction
 
 from prompt_learning.datasets.emotion import LABELS
 from prompt_learning.models import MetricResult, SelectionDecision
+
+
+def _count_based_recall(result: MetricResult, label: str) -> Fraction | None:
+    """Recover the exact recall ratio when an evaluator confusion matrix exists."""
+    matrix = result.aggregate.get("confusion_matrix")
+    if matrix is None:
+        return None
+    position = matrix["labels"].index(label)
+    support = result.aggregate["per_class"][label]["support"]
+    return Fraction(matrix["matrix"][position][position], support) if support else Fraction(0)
 
 
 def select_emotion_candidate(
@@ -21,11 +32,17 @@ def select_emotion_candidate(
     if proposed["invalid_output_rate"] > current["invalid_output_rate"]:
         reasons.append("invalid_output_rate_increased")
     for label in LABELS:
-        recall_drop = (
-            Decimal(str(current["per_class"][label]["recall"]))
-            - Decimal(str(proposed["per_class"][label]["recall"]))
-        )
-        if recall_drop >= Decimal("0.05"):
+        baseline_recall = _count_based_recall(baseline, label)
+        candidate_recall = _count_based_recall(candidate, label)
+        if baseline_recall is not None and candidate_recall is not None:
+            recall_dropped = baseline_recall - candidate_recall >= Fraction(1, 20)
+        else:
+            recall_drop = (
+                Decimal(str(current["per_class"][label]["recall"]))
+                - Decimal(str(proposed["per_class"][label]["recall"]))
+            )
+            recall_dropped = recall_drop >= Decimal("0.05")
+        if recall_dropped:
             reasons.append(f"recall_drop_at_least_0.05:{label}")
 
     regressions = []

@@ -58,9 +58,9 @@ def run_emotion_inference(
             temperature=temperature,
         )
         try:
-            # Task normalization needs the raw response and token counts even when
-            # the output is ambiguous; the gateway handles calls, retries and cache.
-            response = gateway.complete(request, validator=lambda _: True)
+            # Non-empty ambiguous responses still carry measured output and usage.
+            # Blank responses are transport-invalid and must not survive in cache.
+            response = gateway.complete(request, validator=lambda raw: bool(raw.strip()))
         except (openai.AuthenticationError, openai.PermissionDeniedError, openai.BadRequestError):
             raise
         except Exception as error:

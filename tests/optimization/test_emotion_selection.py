@@ -83,6 +83,41 @@ def test_gate_accepts_recall_drop_just_below_boundary():
     assert decision.accepted
 
 
+def test_gate_rejects_exact_five_point_recall_drop_from_real_evaluations():
+    from prompt_learning.evaluators.classification import evaluate_classification
+    from prompt_learning.optimization.selection import select_emotion_candidate
+
+    rows = []
+    for label in ("sadness", "joy", "love", "anger", "fear", "surprise"):
+        for index in range(60):
+            if label == "sadness":
+                before = "sadness" if index < 38 else "joy"
+                after = "sadness" if index < 35 else "joy"
+            elif label == "joy":
+                before = "joy" if index < 35 else "sadness"
+                after = "joy" if index < 38 else "sadness"
+            else:
+                before = after = label
+            rows.append((f"{label}-{index}", label, before, after))
+    frame = pd.DataFrame(rows, columns=[
+        "example_id", "expected_label", "baseline_output", "candidate_output",
+    ])
+    baseline = evaluate_classification(frame.rename(
+        columns={"baseline_output": "normalized_output"},
+    ).drop(columns="candidate_output"))
+    candidate = evaluate_classification(frame.rename(
+        columns={"candidate_output": "normalized_output"},
+    ).drop(columns="baseline_output"))
+
+    assert baseline.aggregate["per_class"]["sadness"]["recall"] == 38 / 60
+    assert candidate.aggregate["per_class"]["sadness"]["recall"] == 35 / 60
+    assert baseline.aggregate["accuracy"] == candidate.aggregate["accuracy"]
+    assert baseline.aggregate["macro_f1"] == candidate.aggregate["macro_f1"]
+    decision = select_emotion_candidate(baseline, candidate, "long prompt", "short")
+    assert not decision.accepted
+    assert "recall_drop_at_least_0.05:sadness" in decision.reasons
+
+
 @pytest.mark.parametrize(("baseline_prompt", "candidate_prompt", "accepted"), [
     ("long prompt", "short", True), ("short", "long prompt", False),
     ("first", "other", False), ("same", "same", False),

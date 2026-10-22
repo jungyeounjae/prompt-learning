@@ -6,7 +6,7 @@ import httpx
 import openai
 
 from prompt_learning.gateway import ModelGateway
-from prompt_learning.models import ModelResponse, PromptCandidate
+from prompt_learning.models import ModelRequest, ModelResponse, PromptCandidate
 
 
 def test_render_preserves_literal_braces_in_template_and_text():
@@ -92,6 +92,58 @@ def test_inference_keeps_invalid_output_and_failed_rows_without_error_secrets(tm
     assert pd.isna(result.iloc[1].input_tokens) and pd.isna(result.iloc[1].output_tokens)
     assert result.latency_ms.ge(0).all()
     assert "secret-api-key" not in result.to_json()
+
+
+@pytest.mark.parametrize("empty_raw", ["", " \t "])
+def test_inference_evicts_empty_cached_output_and_uses_live_replacement(tmp_path, empty_raw):
+    from prompt_learning.tasks.emotion import run_emotion_inference
+
+    responses = iter([
+        ModelResponse(empty_raw, 1, 1, 1.0),
+        ModelResponse("joy", 12, 2, 1.0),
+    ])
+    calls = []
+
+    def client(request):
+        calls.append(request)
+        return next(responses)
+
+    gateway = ModelGateway(client, tmp_path / "cache.sqlite")
+    request = ModelRequest(
+        task="emotion", model="offline",
+        messages=({"role": "user", "content": "example"},), temperature=0.0,
+    )
+    gateway.complete(request, validator=lambda _: True)
+    frame = pd.DataFrame([{
+        "example_id": "a", "text": "example", "expected_label": "joy",
+    }])
+
+    result = run_emotion_inference(frame, PromptCandidate("{text}", 1, 0), gateway, model="offline")
+    row = result.iloc[0]
+    assert row.raw_output == "joy" and row.normalized_output == "joy"
+    assert row.input_tokens == 12 and row.output_tokens == 2
+    assert not row.cached and row.error is None
+    assert len(calls) == 2
+
+
+def test_inference_keeps_nonempty_ambiguous_output_cacheable(tmp_path):
+    from prompt_learning.tasks.emotion import run_emotion_inference
+
+    calls = []
+
+    def client(request):
+        calls.append(request)
+        return ModelResponse("joy or sadness", 8, 3, 1.0)
+
+    gateway = ModelGateway(client, tmp_path / "cache.sqlite")
+    frame = pd.DataFrame([{
+        "example_id": "a", "text": "example", "expected_label": "joy",
+    }])
+    first = run_emotion_inference(frame, PromptCandidate("{text}", 1, 0), gateway, model="offline")
+    second = run_emotion_inference(frame, PromptCandidate("{text}", 1, 0), gateway, model="offline")
+    assert first.iloc[0].normalized_output == second.iloc[0].normalized_output == "invalid"
+    assert not first.iloc[0].cached and second.iloc[0].cached
+    assert len(calls) == 1
 
 
 def test_inference_rejects_missing_placeholder_before_any_call(tmp_path):
