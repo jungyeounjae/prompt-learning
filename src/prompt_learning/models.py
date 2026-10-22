@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping
@@ -10,6 +11,30 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from prompt_learning.config import ExperimentConfig
+
+
+@dataclass(frozen=True)
+class ModelRequest:
+    task: str
+    model: str
+    messages: tuple[Mapping[str, Any], ...]
+    temperature: float = 0.0
+    parameters: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ModelResponse:
+    text: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: float
+    cached: bool = False
+
+
+@dataclass(frozen=True)
+class ModelPricing:
+    input_per_million: Decimal
+    output_per_million: Decimal
 
 
 @dataclass(frozen=True)

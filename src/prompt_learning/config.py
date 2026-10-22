@@ -1,11 +1,14 @@
 """Load local experiment settings without constructing external clients."""
 
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from math import isclose, isfinite
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
 import yaml
+
+from prompt_learning.models import ModelPricing
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,7 @@ class ExperimentConfig:
     cache_path: Path = Path(".cache/prompt_learning.sqlite3")
     artifact_root: Path = Path("runs")
     evaluation: Mapping[str, Any] = field(default_factory=dict)
+    pricing: Mapping[str, ModelPricing] = field(default_factory=dict)
 
 
 def _invalid(key: str, value: Any, requirement: str) -> ValueError:
@@ -85,6 +89,16 @@ def _number(value: Any, key: str, minimum: float, maximum: float) -> float:
             or not isfinite(value) or not minimum <= value <= maximum):
         raise _invalid(key, value, f"expected a finite number in [{minimum}, {maximum}]")
     return float(value)
+
+
+def _price(value: Any, key: str) -> Decimal:
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise _invalid(key, value, "expected a finite non-negative decimal") from None
+    if not result.is_finite() or result < 0:
+        raise _invalid(key, value, "expected a finite non-negative decimal")
+    return result
 
 
 def load_config(path: Path) -> ExperimentConfig:
@@ -135,4 +149,11 @@ def load_config(path: Path) -> ExperimentConfig:
         cache_path=Path(_text(data.get("cache_path", ".cache/prompt_learning.sqlite3"), "cache_path")),
         artifact_root=Path(_text(data.get("artifact_root", "runs"), "artifact_root")),
         evaluation=_mapping(data.get("evaluation", {}), "evaluation"),
+        pricing={
+            name: ModelPricing(**{
+                rate: _price(_mapping(prices, f"pricing.{name}").get(rate), f"pricing.{name}.{rate}")
+                for rate in ("input_per_million", "output_per_million")
+            })
+            for name, prices in _mapping(data.get("pricing", {}), "pricing").items()
+        },
     )
