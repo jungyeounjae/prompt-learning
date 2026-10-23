@@ -4,6 +4,7 @@ import argparse
 from collections.abc import Sequence
 from functools import partial
 import json
+from math import floor
 import os
 from pathlib import Path
 import sys
@@ -81,6 +82,19 @@ def _validate_runtime_config(config: ExperimentConfig) -> None:
         raise ValueError(f"dataset.{count_field} must be at least 5 for isolated Train/Validation/Test subsets")
     if min(config.split.train, config.split.validation, config.split.test) <= 0:
         raise ValueError("split.train, split.validation, and split.test must all be positive")
+    if config.task == "financial":
+        # Match the loader's largest-remainder allocation, including tie order.
+        ratios = (config.split.train, config.split.validation, config.split.test)
+        quotas = [config.dataset.sample_count * ratio for ratio in ratios]
+        counts = [floor(quota) for quota in quotas]
+        order = sorted(range(3), key=lambda i: (-(quotas[i] - counts[i]), i))
+        for index in order[:config.dataset.sample_count - sum(counts)]:
+            counts[index] += 1
+        if min(counts) == 0:
+            raise ValueError(
+                f"split allocates Train/Validation/Test={tuple(counts)}, leaving an empty subset. "
+                "Increase dataset.sample_count or adjust split ratios so each subset has at least one example"
+            )
     if config.failure_rate > 0.05:
         raise ValueError("failure_rate must not exceed the approved 0.05 ceiling")
     defaults = _EVALUATION_DEFAULTS[config.task]

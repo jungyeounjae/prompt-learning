@@ -114,6 +114,39 @@ def test_impossible_sample_counts_fail_before_constructing_clients(tmp_path, mon
     assert f"dataset.{field}" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("ratios", [
+    {"train": 0.98, "validation": 0.01, "test": 0.01},
+    {"train": 0.01, "validation": 0.98, "test": 0.01},
+    {"train": 0.01, "validation": 0.01, "test": 0.98},
+])
+def test_financial_empty_split_allocation_fails_before_external_access(tmp_path, monkeypatch, capsys, ratios):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-key")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("empty requested financial subsets must fail before factories or network")
+
+    monkeypatch.setattr(cli, "build_runner", forbidden)
+    monkeypatch.setattr(datasets, "load_dataset", forbidden)
+    path = config_path(tmp_path, "financial", split=ratios,
+                       dataset={"name": "offline", "revision": "v1", "sample_count": 5})
+    assert cli.main(["run", "--config", str(path)]) == 2
+    error = capsys.readouterr().err
+    assert "split" in error and "dataset.sample_count" in error
+    assert "empty" in error and "Increase" in error
+    assert not (tmp_path / "cache.sqlite3").exists()
+
+
+def test_financial_preflight_accepts_nonempty_largest_remainder_allocation(tmp_path, monkeypatch):
+    from prompt_learning.config import load_config
+
+    monkeypatch.setattr(cli, "OpenAI", lambda **kwargs: SimpleNamespace())
+    path = config_path(tmp_path, "financial",
+                       split={"train": 0.1, "validation": 0.45, "test": 0.45},
+                       dataset={"name": "offline", "revision": "v1", "sample_count": 5})
+    runner = cli.build_runner(load_config(path), api_key="offline-key")
+    assert runner.gateway.cache_path.exists()
+
+
 def offline_boundaries(monkeypatch, task, *, fail=False):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-key")
     requests = []
