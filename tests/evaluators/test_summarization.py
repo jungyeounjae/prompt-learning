@@ -2,6 +2,8 @@
 
 import json
 
+import httpx
+import openai
 import pandas as pd
 import pytest
 
@@ -163,6 +165,53 @@ def test_failed_evaluation_rows_are_retained_and_penalized_with_safe_errors(outc
     assert result.aggregate["overall_score"] == 0
     assert "secret" not in result.feedback and "private" not in result.feedback
     assert "private" not in result.per_example.iloc[0].error
+
+
+@pytest.mark.parametrize("error_type,status", [
+    (openai.AuthenticationError, 401),
+    (openai.PermissionDeniedError, 403),
+    (openai.BadRequestError, 400),
+])
+def test_fatal_judge_configuration_errors_stop_evaluation_immediately(error_type, status):
+    from prompt_learning.evaluators.summarization import evaluate_summaries
+
+    error = error_type("private API configuration", response=httpx.Response(
+        status, request=httpx.Request("POST", "https://example.invalid")), body=None)
+    data = pd.concat([frame(), frame()], ignore_index=True)
+    calls = []
+
+    def evaluator(**kwargs):
+        calls.append(kwargs)
+        raise error
+
+    with pytest.raises(error_type) as caught:
+        evaluate_summaries(data, evaluator)
+    assert caught.value is error
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("error_type,status", [
+    (openai.RateLimitError, 429),
+    (openai.InternalServerError, 503),
+])
+def test_exhausted_transient_judge_errors_penalize_row_and_continue(error_type, status):
+    from prompt_learning.evaluators.summarization import evaluate_summaries
+
+    error = error_type("private transient response", response=httpx.Response(
+        status, request=httpx.Request("POST", "https://example.invalid")), body=None)
+    outcomes = iter([error, json.dumps(payload())])
+
+    def evaluator(**kwargs):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    result = evaluate_summaries(pd.concat([frame(), frame()], ignore_index=True), evaluator)
+    assert result.per_example.overall_score.tolist() == [0, 80]
+    assert result.aggregate["failure_count"] == 1
+    assert result.aggregate["overall_score"] == 40
+    assert "private" not in result.feedback
 
 
 def test_empty_summary_is_failed_without_calling_judge():

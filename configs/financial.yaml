@@ -1,0 +1,36 @@
+task: financial
+dataset:
+  name: kdave/Indian_Financial_News
+  revision: main
+  split: train
+  samples_per_label: 20
+  sample_count: 60
+seed: 42
+split:
+  train: 0.6
+  validation: 0.2
+  test: 0.2
+models:
+  inference: gpt-4o-mini
+  evaluator: gpt-4o
+  meta: gpt-4o
+  temperature: 0.0
+max_iterations: 3
+retry:
+  count: 3
+failure_rate: 0.05
+evaluation:
+  summary_min_chars: 40
+  summary_max_chars: 800
+  overall_score_min_delta: 0.0
+  mean_faithfulness_min_delta: 0.0
+  severe_hallucination_max_increase: 0
+  large_score_drop_at: 20
+  large_score_drop_max_rate: 0.10
+  tie_breaker: shorter_prompt
+cache_path: .cache/prompt_learning.sqlite3
+artifact_root: runs
+phoenix:
+  enabled: false
+# Empty means cost is unavailable; configure verified per-million-token prices.
+pricing: {}

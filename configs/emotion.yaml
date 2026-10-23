@@ -1,0 +1,33 @@
+task: emotion
+dataset:
+  name: dair-ai/emotion
+  revision: main
+  split: train
+  samples_per_label: 20
+  sample_count: 60
+seed: 42
+split:
+  train: 0.6
+  validation: 0.2
+  test: 0.2
+models:
+  inference: gpt-4o-mini
+  evaluator: gpt-4o
+  meta: gpt-4o
+  temperature: 0.0
+max_iterations: 3
+retry:
+  count: 3
+failure_rate: 0.05
+evaluation:
+  macro_f1_min_delta: 0.0
+  accuracy_max_drop: 0.01
+  invalid_output_rate_max_increase: 0.0
+  recall_drop_reject_at: 0.05
+  tie_breaker: shorter_prompt
+cache_path: .cache/prompt_learning.sqlite3
+artifact_root: runs
+phoenix:
+  enabled: false
+# Empty means cost is unavailable; configure verified per-million-token prices.
+pricing: {}

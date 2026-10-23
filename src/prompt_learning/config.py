@@ -1,14 +1,39 @@
 """Load local experiment settings without constructing external clients."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from math import isclose, isfinite
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Literal, Mapping
 
 import yaml
 
 from prompt_learning.models import ModelPricing
+
+
+ConfigOverrides = dict[str, object]
+
+
+@contextmanager
+def merge_config(path: Path, overrides: ConfigOverrides) -> Iterator[Path]:
+    """Overlay legacy sections onto a default YAML in a temporary CLI input.
+
+    Legacy overrides replace top-level fields or overlay one config section.
+    The source file stays untouched and the CLI retains config validation.
+    """
+    data = _mapping(yaml.safe_load(path.read_text(encoding="utf-8")), "config")
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(data.get(key), dict):
+            data[key] = {**data[key], **value}
+        else:
+            data[key] = value
+    with TemporaryDirectory(prefix="prompt-learning-legacy-") as directory:
+        temporary = Path(directory) / path.name
+        temporary.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        yield temporary
 
 
 @dataclass(frozen=True)
