@@ -127,10 +127,14 @@ def test_observer_records_required_safe_attributes(config):
     exporter = Exporter()
     tracing = observer(config, exporter)
     safe = {"run_id": "run-1", "task": "financial", "split": "validation",
+            "dataset_name": "news", "dataset_revision": "revision-1",
             "example_id": "example-1", "input_hash": "a" * 64, "reference_id": "ref-1",
             "prompt_hash": "b" * 64, "model": "fake-model", "input_tokens": 12,
             "output_tokens": 4, "cost_usd": 0.001, "latency_ms": 20.5,
-            "accepted": False, "iteration": 2, "phase": "candidate", "mean_faithfulness": 0.9}
+            "accepted": False, "iteration": 2, "phase": "candidate", "mean_faithfulness": 0.9,
+            "train_count": 72, "validation_count": 24, "test_count": 24,
+            "configured_sample_count": 60, "configured_samples_per_label": 20,
+            "train_ratio": 0.6, "validation_ratio": 0.2, "test_ratio": 0.2}
     unsafe = dict(zip(("article", "reference_summary", "prompt", "api_key"), PRIVATE))
     unsafe.update({"metadata": {"api_key": PRIVATE[-1]}, "arbitrary_id": PRIVATE[0]})
     with tracing.start_run({**safe, **unsafe}) as run:

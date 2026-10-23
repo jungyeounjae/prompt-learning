@@ -295,4 +295,4 @@ def test_default_configs_can_build_the_task_without_network(task, tmp_path, monk
     assert (config.split.train, config.split.validation, config.split.test) == (0.6, 0.2, 0.2)
     assert config.seed == 42 and config.failure_rate == 0.05
     assert config.dataset.samples_per_label == 20 and config.dataset.sample_count == 60
-    assert config.phoenix.enabled is False
+    assert config.phoenix.enabled is True

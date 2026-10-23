@@ -113,6 +113,7 @@ class SpanExporter(Protocol):
 _TEXT_FIELDS = frozenset({
     "run_id", "task", "split", "example_id", "reference_id",
     "dataset_id", "dataset_revision", "model", "inference_model", "evaluator_model", "meta_model",
+    "dataset_name",
 })
 _HASH_FIELDS = frozenset({"input_hash", "prompt_hash"})
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}\Z")
@@ -122,6 +123,9 @@ _NUMBER_FIELDS = frozenset({
     "mean_compression_score", "mean_rouge_l_f1", "mean_faithfulness", "mean_conciseness",
     "mean_financial_figures", "failure_count", "failure_rate", "severe_hallucination_count",
     "financial_figures_not_applicable_count", "example_count", "regression_count",
+    "train_count", "validation_count", "test_count", "excluded_count",
+    "configured_sample_count", "configured_samples_per_label",
+    "train_ratio", "validation_ratio", "test_ratio",
 })
 _SPAN_NAMES = frozenset({
     "experiment", "dataset", "inference", "evaluation", "optimization", "selection",

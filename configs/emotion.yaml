@@ -28,6 +28,6 @@ evaluation:
 cache_path: .cache/prompt_learning.sqlite3
 artifact_root: runs
 phoenix:
-  enabled: false
+  enabled: true
 # Empty means cost is unavailable; configure verified per-million-token prices.
 pricing: {}

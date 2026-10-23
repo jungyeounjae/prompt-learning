@@ -192,11 +192,20 @@ class ExperimentRunner:
         path = self.artifact_writer.start_run(config.task, run_id)
         attributes = {
             "run_id": run_id, "task": config.task, "seed": config.seed,
+            "dataset_name": config.dataset.name,
             "dataset_revision": config.dataset.revision, "inference_model": config.models.inference,
             "evaluator_model": config.models.evaluator, "meta_model": config.models.meta,
+            "train_ratio": config.split.train, "validation_ratio": config.split.validation,
+            "test_ratio": config.split.test,
         }
         with self._span(lambda: self.observer.start_run(attributes)) as root:
-            with self._span(lambda: root.child("dataset_load", {})):
+            with self._span(lambda: root.child("dataset_load", {
+                "dataset_name": config.dataset.name, "dataset_revision": config.dataset.revision,
+                "configured_sample_count": config.dataset.sample_count,
+                "configured_samples_per_label": config.dataset.samples_per_label,
+                "train_ratio": config.split.train, "validation_ratio": config.split.validation,
+                "test_ratio": config.split.test,
+            })):
                 splits = self.dataset_loader(config)
                 dataset_ids, input_hashes = {}, {}
                 seen = set()
