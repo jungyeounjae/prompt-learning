@@ -12,6 +12,7 @@ from decimal import Decimal
 import json
 import re
 
+import openai
 import pandas as pd
 
 from prompt_learning.models import MetricResult
@@ -155,6 +156,8 @@ def evaluate_summaries(frame: pd.DataFrame, evaluator: Callable[..., str]) -> Me
                 evaluation = parse_summary_evaluation(evaluator(
                     article=source["article"], reference_summary=source["reference_summary"], output=output,
                 ))
+            except (openai.AuthenticationError, openai.PermissionDeniedError, openai.BadRequestError):
+                raise
             except Exception as error:
                 record["error"] = type(error).__name__
         elif empty and not failed:

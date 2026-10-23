@@ -136,6 +136,63 @@ def test_financial_empty_split_allocation_fails_before_external_access(tmp_path,
     assert not (tmp_path / "cache.sqlite3").exists()
 
 
+@pytest.mark.parametrize("samples_per_label,ratios", [
+    (5, {"train": 0.1, "validation": 0.45, "test": 0.45}),
+    (5, {"train": 0.8, "validation": 0.1, "test": 0.1}),
+    (5, {"train": 0.6, "validation": 0.1, "test": 0.3}),
+    (5, {"train": 0.6, "validation": 0.3, "test": 0.1}),
+    (5, {"train": 0.6, "validation": 0.19, "test": 0.21}),
+    (20, {"train": 0.95, "validation": 0.025, "test": 0.025}),
+])
+def test_emotion_impossible_stratified_allocation_fails_before_external_access(
+    tmp_path, monkeypatch, capsys, samples_per_label, ratios,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-key")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("impossible emotion stratification must fail before factories or network")
+
+    monkeypatch.setattr(cli, "build_runner", forbidden)
+    monkeypatch.setattr(datasets, "load_dataset", forbidden)
+    path = config_path(tmp_path, split=ratios, dataset={
+        "name": "offline", "revision": "v1", "samples_per_label": samples_per_label,
+    })
+    assert cli.main(["run", "--config", str(path)]) == 2
+    error = capsys.readouterr().err
+    assert "split" in error and "dataset.samples_per_label" in error
+    assert "label" in error and "Increase" in error
+    assert not (tmp_path / "cache.sqlite3").exists()
+
+
+@pytest.mark.parametrize("ratios,wanted", [
+    ({"train": 0.6, "validation": 0.2, "test": 0.2}, [18, 6, 6]),
+    ({"train": 0.61, "validation": 0.195, "test": 0.195}, [18, 6, 6]),
+    ({"train": 0.5, "validation": 0.25, "test": 0.25}, [15, 7, 8]),
+    ({"train": 0.2, "validation": 0.4, "test": 0.4}, [6, 12, 12]),
+])
+def test_emotion_preflight_accepts_feasible_stratified_boundaries(
+    tmp_path, monkeypatch, ratios, wanted,
+):
+    from prompt_learning.config import load_config
+    from prompt_learning.datasets.emotion import LABELS, split_emotion
+
+    monkeypatch.setattr(cli, "OpenAI", lambda **kwargs: SimpleNamespace())
+    path = config_path(tmp_path, split=ratios, dataset={
+        "name": "offline", "revision": "v1", "samples_per_label": 5,
+    })
+    config = load_config(path)
+    runner = cli.build_runner(config, api_key="offline-key")
+    assert runner.gateway.cache_path.exists()
+    data = pd.DataFrame([
+        {"text": f"{label} example {index}", "label": label}
+        for label in LABELS for index in range(5)
+    ])
+    splits = split_emotion(data, seed=config.seed, samples_per_label=5, ratios=config.split)
+    parts = (splits.train, splits.validation, splits.test)
+    assert [len(part) for part in parts] == wanted
+    assert all(set(part.expected_label) == set(LABELS) for part in parts)
+
+
 def test_financial_preflight_accepts_nonempty_largest_remainder_allocation(tmp_path, monkeypatch):
     from prompt_learning.config import load_config
 

@@ -14,7 +14,7 @@ from openai import OpenAI
 
 from prompt_learning.artifacts import ArtifactWriter
 from prompt_learning.config import ExperimentConfig, load_config
-from prompt_learning.datasets.emotion import load_emotion_dataset
+from prompt_learning.datasets.emotion import LABELS, load_emotion_dataset
 from prompt_learning.datasets.financial_news import load_financial_dataset
 from prompt_learning.evaluators.classification import evaluate_classification
 from prompt_learning.evaluators.summarization import evaluate_summaries, parse_summary_evaluation
@@ -82,7 +82,23 @@ def _validate_runtime_config(config: ExperimentConfig) -> None:
         raise ValueError(f"dataset.{count_field} must be at least 5 for isolated Train/Validation/Test subsets")
     if min(config.split.train, config.split.validation, config.split.test) <= 0:
         raise ValueError("split.train, split.validation, and split.test must all be positive")
-    if config.task == "financial":
+    if config.task == "emotion":
+        # Match the loader's two stratified train_test_split calls. Each subset
+        # must fit all labels; Validation and Test also need two per label in
+        # the first split's remainder before their own stratification.
+        total = len(LABELS) * config.dataset.samples_per_label
+        train_count = floor(total * config.split.train)
+        remainder = total - train_count
+        validation_count = floor(
+            remainder * (config.split.validation / (config.split.validation + config.split.test))
+        )
+        counts = (train_count, validation_count, remainder - validation_count)
+        if min(counts) < len(LABELS):
+            raise ValueError(
+                f"split allocates Train/Validation/Test={counts}, too few rows for every emotion label. "
+                "Increase dataset.samples_per_label or adjust split ratios so each subset can contain all six labels"
+            )
+    else:
         # Match the loader's largest-remainder allocation, including tie order.
         ratios = (config.split.train, config.split.validation, config.split.test)
         quotas = [config.dataset.sample_count * ratio for ratio in ratios]
