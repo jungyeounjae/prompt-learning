@@ -231,10 +231,8 @@ class PhoenixObserver:
             method = getattr(resource, "add_span_annotation", None)
             if method is None:
                 raise AttributeError("Phoenix client has no span annotation API")
-            result = {"label": label}
-            if score is not None:
-                result["score"] = score
-            method(span_id=span_id, annotation_name=name, result=result)
+            method(span_id=span_id, annotation_name=name, annotator_kind="CODE",
+                   label=label, score=score, sync=True)
         except Exception:
             self._warn("span annotation")
 
