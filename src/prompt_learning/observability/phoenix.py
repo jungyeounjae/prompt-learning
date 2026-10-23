@@ -201,7 +201,7 @@ class _PhoenixRunSpan:
         context = getattr(self.span, "get_span_context", lambda: None)()
         span_id = getattr(context, "span_id", None)
         if isinstance(span_id, int) and span_id:
-            self.observer.add_annotation(span_id=f"{span_id:032x}", name=name, label=label, score=score)
+            self.observer.add_annotation(span_id=f"{span_id:016x}", name=name, label=label, score=score)
 
 
 class PhoenixObserver:
