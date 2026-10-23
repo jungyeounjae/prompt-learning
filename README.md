@@ -1,220 +1,163 @@
 [日本語](README.md) | [한국어](README.ko.md)
 
-# Arize Prompt Learningによる自己改善型LLMプロンプト
+# 評価に基づくプロンプト最適化実験
 
-Hugging Faceのデータセット、OpenAIモデル、Arize Prompt Learningを使い、
-自然言語フィードバックをもとにLLMプロンプトを反復的に改善する実験リポジトリです。
+プロンプトの変更は平均点を上げても、一部の入力や評価基準を悪化させることが
+あります。このツールは感情分類と金融ニュース要約について、Trainで候補を
+生成し、独立したValidationの回帰防止条件で採否を決め、最終プロンプトだけを
+Testで1回評価します。ローカルCLIと成果物で実験を再現・検討できます。
 
-次の2つのタスクを検証します。
+現時点で、この共通パイプラインによる実モデル実行は検証できていません。
+性能向上、実測コスト・遅延、Phoenix画面の証拠はありません。
+[実験の状態と旧成果物](artifacts/experiment-summary.md)を参照してください。
+自動テストは外部サービスを置き換えた検証であり、モデル品質の測定ではありません。
 
-1. **dair-ai/emotion**を使用した感情分類
-2. **kdave/Indian_Financial_News**を使用した金融ニュース要約
+## セットアップとオフライン確認
 
-共通のパイプラインは以下のとおりです。
+リポジトリのルートからPython 3.12以上で実行します。依存関係の正本は
+[pyproject.toml](pyproject.toml)です。[requirements.txt](requirements.txt)は
+同じプロジェクトをインストールする互換用ファイルです。初回インストールには
+ネットワークと上流Gitリポジトリへのアクセスが必要です。
 
-~~~text
-現在のプロンプトでAgentを実行
-          ↓
-結果を評価し、自然言語フィードバックを生成
-          ↓
-Arize PromptLearningOptimizer.optimize()
-          ↓
-GPT-4oが改善プロンプトを生成
-          ↓
-次のIterationで再評価
-~~~
-
-## セットアップ
-
-現在、Arize Prompt Learningの公式リポジトリ版パッケージはPython 3.12以上を
-必要とします。本プロジェクトのスクリプト自体はPython 3.10の構文と互換性が
-ありますが、最新SDKと一緒にインストールする場合はPython 3.12以上の
-仮想環境を使用してください。
-
-~~~bash
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-export OPENAI_API_KEY="sk-..."
-~~~
+python -m pip install -e '.[dev]' build
+# 互換用の基本インストール: python -m pip install -r requirements.txt
+```
 
-## 実行方法
+以下のヘルプはAPIキーもネットワークも必要としません。
 
-デフォルト設定では、先頭30サンプル、最大3回の評価、目標精度95%を使用します。
+```bash offline
+python -m prompt_learning.cli --help
+python -m prompt_learning.cli run --help
+```
 
-~~~bash
-python self_improving_emotion_classifier.py
-~~~
+インストール後は `prompt-learning --help` も利用できます。
 
-APIコストを抑えて短時間で確認する場合は、次のように実行できます。
+## モデル実験の実行
 
-~~~bash
-python self_improving_emotion_classifier.py --samples 5 --iterations 1
-~~~
+`OPENAI_API_KEY`を環境変数かルートのローカル`.env`に設定してください。
+キーを履歴に残さない入力例です。以下の実験は有料APIとデータセットの
+ダウンロードを使用します。
 
-最終プロンプトはデフォルトで **optimized_prompt.txt** に保存されます。
-**--output**、**--iterations**、**--target-accuracy** オプションで設定を変更できます。
+```bash
+read -r -s OPENAI_API_KEY
+export OPENAI_API_KEY
+export PHOENIX_ENABLED=false
+python -m prompt_learning.cli run --config configs/emotion.yaml
+python -m prompt_learning.cli run --config configs/financial.yaml
+```
 
-## 実験1：感情分類の結果
+基本設定はseed 42、60/20/20分割、最大3候補、感情は各ラベル20件
+（計120件）、金融は重複除去後60件です。推論は`gpt-4o-mini`、
+金融評価と候補生成は`gpt-4o`です。感情評価にLLMは使用しません。
 
-簡易検証として **dair-ai/emotion** の先頭5サンプルを実行したところ、
-初期プロンプトは2件に正解し、精度は40%でした。
+小規模確認では、まずHugging Faceの現在のcommitを解決して固定します。
+同じ実験を再現するときは、保存済み設定のcommitを再利用してください。
 
-| 入力の主な表現 | 正解 | 初期予測 | 結果 |
-|---|---|---|---|
-| **humiliated** | sadness | sadness | 正解 |
-| **hopeless**から**hopeful**への変化 | sadness | joy | 不正解 |
-| **greedy**、**wrong** | anger | sadness | 不正解 |
-| 暖炉を回想する文 | love | sadness | 不正解 |
-| **grouchy** | anger | anger | 正解 |
+```bash
+export EMOTION_DATASET_REVISION="$(python -c 'from huggingface_hub import HfApi; print(HfApi().dataset_info("dair-ai/emotion").sha)')"
+export FINANCIAL_DATASET_REVISION="$(python -c 'from huggingface_hub import HfApi; print(HfApi().dataset_info("kdave/Indian_Financial_News").sha)')"
+```
 
-初期モデルは文全体の感情よりも、**hopeful**、**wrong**、**nostalgic**などの
-一部の単語に強く反応し、**joy**、**anger**、**love**を**sadness**と
-混同していました。
+次の設定生成自体はオフラインです。上で解決したrevisionが必要です。
+元の設定を保持し、感情は各ラベル5件（計30件）、金融は5件に減らします。
+全モデルを`gpt-4o-mini`、候補は1回とし、splitと承認基準を保持します。
 
-Arize Prompt Learningはフィードバックをもとに、次の指示を追加しました。
+```bash offline
+python - <<'PY'
+import os
+from pathlib import Path
+import yaml
 
-~~~text
-Consider the overall emotional tone of the text rather than focusing on
-isolated words.
-~~~
+destination = Path('runs/configs')
+destination.mkdir(parents=True, exist_ok=True)
+for task, count_key in (('emotion', 'samples_per_label'), ('financial', 'sample_count')):
+    config = yaml.safe_load(Path(f'configs/{task}.yaml').read_text())
+    config['dataset']['revision'] = os.environ[f'{task.upper()}_DATASET_REVISION']
+    config['dataset'][count_key] = 5
+    config['models'].update(inference='gpt-4o-mini', evaluator='gpt-4o-mini', meta='gpt-4o-mini')
+    config['max_iterations'] = 1
+    config['phoenix']['enabled'] = False
+    config['cache_path'] = f'.cache/{task}-smoke.sqlite3'
+    (destination / f'{task}.yaml').write_text(yaml.safe_dump(config, sort_keys=False))
+PY
+```
 
-さらに、3件の誤答を含む実際のサンプルをFew-shot例として追加しました。
-生成されたプロンプト全体は
-[artifacts/emotion/optimized_prompt.txt](artifacts/emotion/optimized_prompt.txt)
-で確認できます。
+```bash
+export PHOENIX_ENABLED=false
+python -m prompt_learning.cli run --config runs/configs/emotion.yaml
+python -m prompt_learning.cli run --config runs/configs/financial.yaml
+```
 
-この実行では、改善プロンプトを独立したTestデータで再検証していません。
-そのため、40%から汎化性能が向上したとは結論づけていません。今後は
-最適化用Trainデータと評価用Testデータを分離する必要があります。
+これは実行確認用の最小規模です。金融の分割は3/1/1件となり、性能の一般化を
+推定するには小さすぎます。デフォルトの`revision: main`、モデル名のalias、
+未固定の上流依存関係は変化します。厳密な追試にはrevision、モデルsnapshot、
+依存関係一覧、設定ファイルを保存してください。
 
-## 金融ニュース要約パイプライン
+## 評価と候補の選択
 
-**self_improving_financial_summarizer.py** は金融記事をGPT-4o-miniで要約し、
-GPT-4o Evaluatorの自然言語による批評を使って、Arize Prompt Learningで
-プロンプトを改善します。デフォルト実行では20記事を3回評価するため、
-まずは次の低コストな確認コマンドを推奨します。
+Trainは候補生成だけ、Validationは選択だけ、Testは最終評価だけに使用します。
+Trainの点数は最終性能ではありません。Testを見て候補や閾値を調整すると
+独立した評価ではなくなり、新しい未使用データが必要になります。
 
-~~~bash
-python self_improving_financial_summarizer.py \
-  --samples 2 \
-  --iterations 2 \
-  --evaluator-model gpt-4o-mini
-~~~
+| タスク | Validationの承認条件 |
+|---|---|
+| 感情分類 | Macro F1非低下、Accuracy低下は1ポイント以内、invalid率非増加、各クラスRecall低下は5ポイント未満 |
+| 金融要約 | 総合点・平均Faithfulness非低下、深刻な幻覚数非増加、20点以上の低下例が10%以内 |
 
-デフォルト設定ですべて実行する場合は、次のコマンドを使用します。
+同点は短いプロンプトを優先し、長さも同じなら現在の候補を保持します。
+金融は財務数値・簡潔性・忠実性を1〜5点で評価し、財務数値が存在しない記事は
+その基準を`not_applicable`として分母から除外します。空出力、40〜800字の
+範囲、JSON形式、原文にない通貨・百分率も検査します。
+拒否した候補も保存するため、平均点だけでは見えない回帰を確認できます。
+閾値は実装済みの承認ポリシーに固定され、任意の変更値はCLIで拒否されます。
 
-~~~bash
-python self_improving_financial_summarizer.py
-~~~
+## Phoenixとローカル成果物
 
-最終プロンプトは **financial_optimized_prompt.txt** に、Iterationごとの
-プロンプト・評価結果・スコア履歴・Arizeメタプロンプトは
-**financial_results/** に保存されます。
+Phoenixは任意です。`PHOENIX_ENABLED=false`では観測接続を行いません。
+有効時の接続失敗は警告となり、ローカル実験は継続します。
 
-## 実験2：金融ニュース要約の結果
+```bash
+python -m pip install -e '.[phoenix]'
+docker compose config
+docker compose up -d
+export PHOENIX_ENABLED=true
+export PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006
+python -m prompt_learning.cli run --config runs/configs/emotion.yaml
+docker compose stop
+```
 
-金融記事20件を対象に3回評価しました。GPT-4o Evaluatorは各要約を
-次の3基準で1〜5点に評価し、具体的な自然言語フィードバックを生成しました。
+UIは`http://localhost:6006`です。Composeの既定imageは`latest`なので、
+追試では`PHOENIX_IMAGE`に確認済みtag/digestを指定してください。
+データはDocker volumeに残ります。Phoenixにはhash/IDと集計情報を送り、
+原文や参照要約を送らない設計です。実サーバー互換性と画面は未検証です。
 
-- 主要な財務数値が含まれているか
-- 不要な内容がなく簡潔か
-- 原文にない内容を生成していないかという忠実性
+既定の保存先は`runs/<task>/<run-id>/`です。manifestにはUTC時刻、設定、
+revision、モデル、seed、入力hashを記録します。プロンプト、各候補の
+Validation指標、最終Test指標、拒否理由、回帰一覧、レポートを保存し、
+感情分類には混同行列画像も生成します。`runs/`と`.cache/`はGit対象外です。
+[アーキテクチャと成果物の仕様](docs/architecture.md)に詳細があります。
 
-### Iterationごとのスコア
+## 限界と検証
 
-| Iteration | 総合スコア | 財務数値 | 簡潔性 | 忠実性 |
-|---|---:|---:|---:|---:|
-| 1 | 83.67 | 3.85 | 3.95 | 4.75 |
-| 2 | 83.67 | 4.00 | 3.95 | 4.60 |
-| 3 | 83.33 | 3.95 | 3.90 | 4.65 |
+LLM評価のバイアス、少数例の分散、Validationへの繰り返し適合が残ります。
+金融評価は人手監査と照合してください。Testは選択されたプロンプトだけを
+評価するため、同じTest上の初期モデルとの差はこの実行だけでは測定しません。
+価格設定は既定で空で、コストは不明です。現在のCLIのローカル成果物には
+完全なトークン・費用・呼び出し遅延の台帳がなく、meta modelも共通gatewayの
+外で呼び出されます。実行時間だけをAPI遅延や実費として報告しないでください。
+公開前にプロンプト内の例やスクリーンショットも点検してください。
 
-Iteration 2では、主要な財務数値、経済的要因、影響と示唆を強調し、
-根拠のない内容を除外する指示が追加されました。その結果、財務数値の
-スコアは **3.85 → 4.00** に上昇しましたが、忠実性は
-**4.75 → 4.60** に低下し、総合スコアは変わりませんでした。
+```bash
+python -m pytest tests/test_documentation.py -v
+python -m pytest -v
+python -m build
+docker compose config
+git diff --check
+```
 
-Iteration 3では、金融市場と経済政策における重要な変化を強調する指示が
-追加されましたが、総合スコアは **83.33** にわずかに低下しました。
-
-### 改善しなかった原因
-
-今回の実験では、財務数値を強調する指示をすべての記事に同じように適用した
-ことで、副作用が発生しました。
-
-- 数値の多い記事では、周辺の数値や企業ニュースまで過剰に列挙した
-- 数値のない記事でも、財務指標が存在するかのように構造化した
-- 情報量の増加により、簡潔性と忠実性が低下した
-- Evaluatorは原文に数値がない場合でも財務数値のスコアを低く付けた
-
-たとえば、あるサンプルは **66.67 → 46.67 → 73.33**、別のサンプルは
-**66.67 → 66.67 → 40.00** と変化しました。全体平均では小さな変化でも、
-個別の記事ではプロンプト変更によって大幅な性能低下が発生しました。
-
-Iteration 1と2が同じ最高スコアだったため、同点の場合に先に評価された
-プロンプトを維持する現在のロジックでは、初期プロンプトが最終結果として
-選択されました。
-
-~~~text
-Summarize the following financial news article:
-
-Article: {article}
-
-Summary:
-~~~
-
-したがって、今回の金融要約実験の結論は「プロンプトが改善した」ではなく、
-財務数値をより多く含めるよう最適化された一方、他の評価基準との
-トレードオフにより、総合性能の向上には至らなかったということです。
-
-Iterationごとのプロンプトと集計スコアは
-[artifacts/financial/](artifacts/financial/)で確認できます。
-
-## 2つの実験から得られた結論
-
-| 区分 | 感情分類 | 金融ニュース要約 |
-|---|---|---|
-| 評価方法 | 正解ラベルとの直接比較 | GPT-4o Evaluator |
-| フィードバック生成 | Pythonの比較ロジック | Evaluator LLM |
-| 主な改善 | 文全体の感情を判断するルールとFew-shot例 | 財務数値と忠実性に関するルール |
-| 主な限界 | 同じデータの再利用と過学習 | Evaluatorのバイアスと評価基準間のトレードオフ |
-| 確認できた結果 | 具体的な改善プロンプトを生成 | 総合スコアは改善しなかった |
-
-Prompt Learningは性能向上を保証するツールではなく、失敗原因を自然言語の
-ルールへ変換し、プロンプトの修正プロセスを自動化するツールに近いものです。
-特に自由形式の生成タスクでは、Optimizerより先に、Evaluatorの判断が
-人間の判断と一致するかを検証する必要があります。
-
-信頼できる実験にするため、今後は次の改善が必要です。
-
-- Train、Validation、Testデータの分離
-- 原文に財務数値がない場合の **not_applicable** 処理
-- 評価基準ごとの独立したEvaluator
-- 一部サンプルにおける人手評価とLLM評価の比較
-- スコアが低下したプロンプトを適用しないロールバック
-- APIコスト、トークン数、処理時間の記録
-
-## 公開している実験成果物
-
-再現性と結果比較のため、公開可能なプロンプトと集計スコアは
-**artifacts/** に保存しています。
-
-~~~text
-artifacts/
-├── emotion/
-│   └── optimized_prompt.txt
-└── financial/
-    ├── optimized_prompt.txt
-    ├── iteration_1_prompt.txt
-    ├── iteration_2_prompt.txt
-    ├── iteration_3_prompt.txt
-    └── iteration_history.csv
-~~~
-
-記事原文と参照要約を含む **iteration_N_results.csv**、およびArizeが生成した
-メタプロンプトは、データの再配布を避けるためリポジトリから除外しています。
-
-これは結果を隠すためではありません。リポジトリではIterationごとの
-プロンプトと集計スコアを公開し、実験プロセスと結論を確認できるように
-しています。除外しているのは、第三者の記事全文を重複保存した生の実行
-ファイルのみです。
+旧`self_improving_*.py`は非推奨の互換ラッパーです。`--samples 5`の旧感情例や
+単一出力ファイル指定は使えません。新しいCLIと設定に移行してください。
+実装済み機能と未検証事項は[実験状態](artifacts/experiment-summary.md)を参照してください。

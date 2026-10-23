@@ -1,215 +1,163 @@
 [日本語](README.md) | [한국어](README.ko.md)
 
-# Self-Improving LLM Prompts with Arize Prompt Learning
+# 평가 기반 프롬프트 최적화 실험
 
-Hugging Face 데이터셋, OpenAI 모델, Arize Prompt Learning을 사용해 LLM
-프롬프트를 자연어 피드백으로 반복 개선하는 실험 저장소입니다.
+프롬프트 변경은 평균 점수를 높이면서 특정 입력이나 평가 기준을 악화시킬 수
+있습니다. 이 도구는 감정 분류와 금융 뉴스 요약에서 Train으로 후보를 만들고,
+독립된 Validation의 회귀 방지 조건으로 채택 여부를 결정한 뒤 최종 프롬프트만
+Test에서 한 번 평가합니다. 로컬 CLI와 산출물로 실험을 재현하고 검토합니다.
 
-두 가지 과제를 실험합니다.
+현재 공통 파이프라인으로 검증한 실제 모델 실행은 없습니다. 성능 향상, 실측
+비용·지연시간, Phoenix 화면의 근거도 없습니다.
+[실험 상태와 기존 산출물](artifacts/experiment-summary.md)을 확인하세요.
+자동 테스트는 외부 서비스를 대체한 동작 검증이며 모델 품질 측정이 아닙니다.
 
-1. `dair-ai/emotion`을 이용한 감정 분류
-2. `kdave/Indian_Financial_News`를 이용한 금융 뉴스 요약
+## 설치와 오프라인 확인
 
-공통 파이프라인은 다음과 같습니다.
-
-```text
-현재 프롬프트로 Agent 실행
-          ↓
-결과 평가 및 자연어 피드백 생성
-          ↓
-Arize PromptLearningOptimizer.optimize()
-          ↓
-GPT-4o가 개선 프롬프트 생성
-          ↓
-다음 Iteration에서 재평가
-```
-
-## 준비
-
-현재 Arize Prompt Learning의 공식 저장소 패키지는 Python 3.12 이상을
-요구합니다. 이 프로젝트의 스크립트 자체는 Python 3.10 문법과 호환되지만,
-최신 SDK를 함께 설치하려면 Python 3.12+ 가상환경을 사용하세요.
+저장소 루트에서 Python 3.12 이상으로 실행하세요. 의존성의 기준은
+[pyproject.toml](pyproject.toml)입니다. [requirements.txt](requirements.txt)는
+같은 프로젝트를 설치하는 호환 파일입니다. 최초 설치에는 네트워크와 상위 Git
+저장소 접근이 필요합니다.
 
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-export OPENAI_API_KEY="sk-..."
+python -m pip install -e '.[dev]' build
+# 호환용 기본 설치: python -m pip install -r requirements.txt
 ```
 
-## 실행
+다음 도움말은 API 키나 네트워크 없이 실행할 수 있습니다.
 
-기본 설정은 상위 30개 샘플, 최대 3회 평가, 목표 정확도 95%입니다.
+```bash offline
+python -m prompt_learning.cli --help
+python -m prompt_learning.cli run --help
+```
+
+설치 후 `prompt-learning --help`도 사용할 수 있습니다.
+
+## 모델 실험 실행
+
+`OPENAI_API_KEY`를 환경변수 또는 루트의 로컬 `.env`에 설정하세요. 아래는 키를
+명령 이력에 남기지 않고 입력하는 예입니다. 실험은 유료 API와 데이터셋
+다운로드를 사용합니다.
 
 ```bash
-python self_improving_emotion_classifier.py
+read -r -s OPENAI_API_KEY
+export OPENAI_API_KEY
+export PHOENIX_ENABLED=false
+python -m prompt_learning.cli run --config configs/emotion.yaml
+python -m prompt_learning.cli run --config configs/financial.yaml
 ```
 
-비용을 줄여 빠르게 확인하려면 다음처럼 실행할 수 있습니다.
+기본 설정은 seed 42, 60/20/20 분할, 최대 후보 3개입니다. 감정은 레이블별
+20개씩 총 120개, 금융은 중복 제거 후 60개입니다. 추론은 `gpt-4o-mini`,
+금융 평가와 후보 생성은 `gpt-4o`입니다. 감정 평가는 LLM을 사용하지 않습니다.
+
+작은 실행을 확인하려면 먼저 Hugging Face의 현재 commit을 조회해 고정하세요.
+같은 실험을 재현할 때는 저장된 설정의 commit을 재사용해야 합니다.
 
 ```bash
-python self_improving_emotion_classifier.py --samples 5 --iterations 1
+export EMOTION_DATASET_REVISION="$(python -c 'from huggingface_hub import HfApi; print(HfApi().dataset_info("dair-ai/emotion").sha)')"
+export FINANCIAL_DATASET_REVISION="$(python -c 'from huggingface_hub import HfApi; print(HfApi().dataset_info("kdave/Indian_Financial_News").sha)')"
 ```
 
-최종 프롬프트는 기본적으로 `optimized_prompt.txt`에 저장됩니다. `--output`,
-`--iterations`, `--target-accuracy` 옵션으로 설정을 변경할 수 있습니다.
+아래 설정 생성 자체는 오프라인입니다. 위에서 조회한 revision이 필요합니다.
+원본 설정을 보존하면서 감정은 레이블별 5개씩 총 30개, 금융은 5개로 줄입니다.
+모든 모델을 `gpt-4o-mini`, 후보는 1회로 바꾸고 분할과 승인 기준은 유지합니다.
 
-## 실험 1: 감정 분류 결과
+```bash offline
+python - <<'PY'
+import os
+from pathlib import Path
+import yaml
 
-빠른 검증을 위해 `dair-ai/emotion`의 첫 5개 샘플로 실행한 결과, 초기
-프롬프트는 2개를 맞혀 정확도 40%를 기록했습니다.
-
-| 입력의 핵심 표현 | 정답 | 초기 예측 | 결과 |
-|---|---|---|---|
-| `humiliated` | sadness | sadness | 정답 |
-| `hopeless`에서 `hopeful`로 변화 | sadness | joy | 오답 |
-| `greedy`, `wrong` | anger | sadness | 오답 |
-| 벽난로를 회상하는 문장 | love | sadness | 오답 |
-| `grouchy` | anger | anger | 정답 |
-
-초기 모델은 문장 전체의 감정 대신 `hopeful`, `wrong`, `nostalgic` 같은 일부
-단어에 민감하게 반응했으며, `joy`, `anger`, `love`를 `sadness`와 혼동했습니다.
-
-Arize Prompt Learning은 피드백을 바탕으로 다음 지침을 추가했습니다.
-
-```text
-Consider the overall emotional tone of the text rather than focusing on
-isolated words.
+destination = Path('runs/configs')
+destination.mkdir(parents=True, exist_ok=True)
+for task, count_key in (('emotion', 'samples_per_label'), ('financial', 'sample_count')):
+    config = yaml.safe_load(Path(f'configs/{task}.yaml').read_text())
+    config['dataset']['revision'] = os.environ[f'{task.upper()}_DATASET_REVISION']
+    config['dataset'][count_key] = 5
+    config['models'].update(inference='gpt-4o-mini', evaluator='gpt-4o-mini', meta='gpt-4o-mini')
+    config['max_iterations'] = 1
+    config['phoenix']['enabled'] = False
+    config['cache_path'] = f'.cache/{task}-smoke.sqlite3'
+    (destination / f'{task}.yaml').write_text(yaml.safe_dump(config, sort_keys=False))
+PY
 ```
-
-또한 세 개의 오답을 포함한 실제 샘플을 Few-shot 예제로 추가했습니다. 생성된
-전체 프롬프트는
-[`artifacts/emotion/optimized_prompt.txt`](artifacts/emotion/optimized_prompt.txt)에서
-확인할 수 있습니다.
-
-이 실행에서는 개선 프롬프트를 독립된 Test 데이터로 다시 검증하지 않았습니다.
-따라서 40% 이후의 일반화 성능이 개선됐다고 결론 내리지는 않습니다. 추후에는
-최적화용 Train과 평가용 Test를 분리해야 합니다.
-
-## 금융 뉴스 요약 파이프라인
-
-`self_improving_financial_summarizer.py`는 금융 기사를 GPT-4o-mini로 요약하고,
-GPT-4o Evaluator의 자연어 비평을 이용해 Arize Prompt Learning으로 프롬프트를
-개선합니다. 기본 실행은 20개 기사와 3회의 평가 회차를 사용하므로 먼저 아래의
-저비용 확인 명령을 권장합니다.
 
 ```bash
-python self_improving_financial_summarizer.py \
-  --samples 2 \
-  --iterations 2 \
-  --evaluator-model gpt-4o-mini
+export PHOENIX_ENABLED=false
+python -m prompt_learning.cli run --config runs/configs/emotion.yaml
+python -m prompt_learning.cli run --config runs/configs/financial.yaml
 ```
 
-전체 기본 설정으로 실행하려면 다음 명령을 사용합니다.
+이 크기는 실행 확인용입니다. 금융은 3/1/1개로 분할되므로 일반화 성능을
+추정하기에는 너무 작습니다. 기본 `revision: main`, 모델 이름의 alias, 고정되지
+않은 상위 의존성은 변할 수 있습니다. 엄밀한 재현에는 revision, 모델 snapshot,
+의존성 목록, 설정 파일을 함께 보관하세요.
+
+## 평가와 후보 선택
+
+Train은 후보 생성, Validation은 선택, Test는 최종 평가에만 사용합니다.
+Train 점수는 최종 성능이 아닙니다. Test 결과를 보고 후보나 임계값을 조정하면
+독립적인 평가가 아니므로 새로운 미사용 데이터가 필요합니다.
+
+| 과제 | Validation 승인 조건 |
+|---|---|
+| 감정 분류 | Macro F1 비감소, Accuracy 하락 1%p 이내, invalid 비율 비증가, 클래스별 Recall 하락 5%p 미만 |
+| 금융 요약 | 종합 점수·평균 Faithfulness 비감소, 심각한 환각 수 비증가, 20점 이상 하락한 샘플 비율 10% 이내 |
+
+모든 지표가 같으면 짧은 프롬프트를 선택하고 길이도 같으면 기존 프롬프트를
+유지합니다. 금융은 재무 수치·간결성·충실성을 1~5점으로 평가합니다. 중요한
+재무 수치가 없는 기사에서는 해당 기준을 `not_applicable`로 분모에서 제외합니다.
+빈 출력, 40~800자 범위, JSON 형식, 원문에 없는 통화·백분율도 검사합니다.
+거절한 후보도 보관하므로 평균 점수로 드러나지 않는 회귀를 확인할 수 있습니다.
+임계값은 구현된 승인 정책으로 고정되며 임의 변경값은 CLI가 거절합니다.
+
+## Phoenix와 로컬 산출물
+
+Phoenix는 선택 사항입니다. `PHOENIX_ENABLED=false`면 관측 연결을 하지 않습니다.
+활성화된 상태에서 연결에 실패하면 경고를 남기고 로컬 실험을 계속합니다.
 
 ```bash
-python self_improving_financial_summarizer.py
+python -m pip install -e '.[phoenix]'
+docker compose config
+docker compose up -d
+export PHOENIX_ENABLED=true
+export PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006
+python -m prompt_learning.cli run --config runs/configs/emotion.yaml
+docker compose stop
 ```
 
-최종 프롬프트는 `financial_optimized_prompt.txt`, 회차별 프롬프트·평가 결과·
-점수 이력·Arize 메타 프롬프트는 `financial_results/`에 저장됩니다.
+UI는 `http://localhost:6006`입니다. Compose 기본 image는 `latest`이므로
+재현할 때는 `PHOENIX_IMAGE`에 검증한 tag/digest를 지정하세요. 데이터는 Docker
+volume에 남습니다. Phoenix에는 hash/ID와 집계 정보만 보내며 원문과 참고 요약은
+보내지 않는 설계입니다. 실제 서버 호환성과 화면은 아직 검증하지 않았습니다.
 
-## 실험 2: 금융 뉴스 요약 결과
+기본 저장 위치는 `runs/<task>/<run-id>/`입니다. manifest에는 UTC 시각, 설정,
+revision, 모델, seed, 입력 hash를 기록합니다. 프롬프트, 후보별 Validation 지표,
+최종 Test 지표, 거절 이유, 회귀 목록, 보고서를 저장합니다. 감정 분류에는
+혼동행렬 이미지도 생성합니다. `runs/`와 `.cache/`는 Git에서 제외합니다.
+[아키텍처와 산출물 명세](docs/architecture.md)에 상세 내용이 있습니다.
 
-금융 기사 20개를 대상으로 3회 평가했습니다. GPT-4o Evaluator는 각 요약을
-다음 세 기준으로 1~5점 평가하고 구체적인 자연어 피드백을 생성했습니다.
+## 한계와 검증
 
-- 주요 재무 수치 포함 여부
-- 불필요한 내용이 없는 간결성
-- 원문에 없는 내용을 만들지 않는 충실성
+LLM 평가 편향, 작은 표본의 분산, Validation에 대한 반복 적합이 남습니다.
+금융 평가는 사람의 검토와 비교하세요. Test는 최종 선택 프롬프트만 평가하므로
+같은 Test에서 초기 프롬프트와의 차이는 이 실행만으로 측정하지 않습니다.
+가격 설정은 기본값이 비어 있어 비용을 알 수 없습니다. 현재 CLI 로컬 산출물에는
+완전한 토큰·비용·호출 지연시간 장부가 없으며 meta model은 공통 gateway 밖에서
+호출합니다. 실행 시간을 API 지연시간이나 실비로 보고하지 마세요. 공개 전에는
+프롬프트에 들어간 예시와 스크린샷도 점검하세요.
 
-### 회차별 점수
-
-| Iteration | 종합 점수 | 재무 수치 | 간결성 | 충실성 |
-|---|---:|---:|---:|---:|
-| 1 | 83.67 | 3.85 | 3.95 | 4.75 |
-| 2 | 83.67 | 4.00 | 3.95 | 4.60 |
-| 3 | 83.33 | 3.95 | 3.90 | 4.65 |
-
-Iteration 2에서는 주요 재무 수치, 경제적 요인, 영향과 시사점을 강조하고 근거
-없는 내용을 제외하라는 지침이 추가됐습니다. 그 결과 재무 수치 점수는
-`3.85 → 4.00`으로 상승했지만 충실성이 `4.75 → 4.60`으로 하락해 종합
-점수는 동일했습니다.
-
-Iteration 3에서는 금융시장 및 경제정책의 중요한 변화를 강조하는 지침이
-추가됐지만, 종합 점수는 `83.33`으로 소폭 하락했습니다.
-
-### 개선되지 않은 원인
-
-이번 실험에서는 재무 수치를 강조하는 지침이 모든 기사에 동일하게 적용되면서
-부작용이 발생했습니다.
-
-- 수치가 많은 기사에서는 주변 수치와 기업 소식까지 과도하게 나열함
-- 수치가 없는 기사에서도 재무 지표가 존재하는 것처럼 구조화함
-- 정보량이 증가하면서 간결성과 충실성이 낮아짐
-- Evaluator가 원문에 수치가 없는 경우에도 재무 수치 점수를 낮게 부여함
-
-예를 들어 한 샘플은 `66.67 → 46.67 → 73.33`, 다른 샘플은
-`66.67 → 66.67 → 40.00`으로 변했습니다. 전체 평균만 보면 작은 변화지만,
-개별 기사에서는 프롬프트 변경으로 큰 성능 하락이 발생했습니다.
-
-Iteration 1과 2가 같은 최고 점수를 기록했기 때문에, 동점일 때 먼저 평가된
-프롬프트를 유지하는 현재 로직은 초기 프롬프트를 최종 결과로 선택했습니다.
-
-```text
-Summarize the following financial news article:
-
-Article: {article}
-
-Summary:
+```bash
+python -m pytest tests/test_documentation.py -v
+python -m pytest -v
+python -m build
+docker compose config
+git diff --check
 ```
 
-따라서 이번 금융 요약 실험의 결론은 “프롬프트가 개선됐다”가 아니라, 재무
-수치를 더 잘 포함하도록 최적화됐지만 다른 평가 기준과의 트레이드오프로 전체
-성능 향상에는 실패했다는 것입니다.
-
-회차별 프롬프트와 전체 집계 점수는
-[`artifacts/financial/`](artifacts/financial/)에서 확인할 수 있습니다.
-
-## 두 실험에서 얻은 결론
-
-| 구분 | 감정 분류 | 금융 뉴스 요약 |
-|---|---|---|
-| 평가 방식 | 정답 레이블과 직접 비교 | GPT-4o Evaluator |
-| 피드백 생성 | Python 비교 로직 | Evaluator LLM |
-| 주요 개선 | 전체 감정 판단 규칙과 Few-shot 예제 | 재무 수치와 충실성 관련 규칙 |
-| 주요 한계 | 동일 데이터 재사용 및 과적합 | Evaluator 편향과 평가 기준 간 트레이드오프 |
-| 확인된 결과 | 구체적인 개선 프롬프트 생성 | 전체 점수는 개선되지 않음 |
-
-Prompt Learning은 성능 향상을 보장하는 도구가 아니라, 실패 원인을 자연어
-규칙으로 변환하고 프롬프트 수정 과정을 자동화하는 도구에 가깝습니다. 특히
-자유 형식 생성 과제에서는 Optimizer보다 먼저 Evaluator가 사람의 판단과
-일치하는지 검증해야 합니다.
-
-신뢰할 수 있는 실험을 위해 다음 개선이 필요합니다.
-
-- Train, Validation, Test 데이터 분리
-- 원문에 재무 수치가 없을 때 `not_applicable` 처리
-- 평가 기준별 독립 Evaluator 사용
-- 일부 샘플에 대한 사람 평가와 LLM 평가 비교
-- 점수가 낮아진 프롬프트를 적용하지 않는 롤백
-- API 비용, 토큰 수, 처리 시간 기록
-
-## 공개 실험 산출물
-
-재현성과 결과 비교를 위해 공개 가능한 프롬프트 및 집계 점수는 `artifacts/`에
-보관합니다.
-
-```text
-artifacts/
-├── emotion/
-│   └── optimized_prompt.txt
-└── financial/
-    ├── optimized_prompt.txt
-    ├── iteration_1_prompt.txt
-    ├── iteration_2_prompt.txt
-    ├── iteration_3_prompt.txt
-    └── iteration_history.csv
-```
-
-기사 원문과 참고 요약이 포함된 `iteration_N_results.csv` 및 Arize가 생성한
-메타프롬프트는 데이터 재배포를 피하기 위해 저장소에서 제외합니다.
-
-이는 결과를 숨기기 위한 것이 아닙니다. 저장소에는 회차별 프롬프트와 집계
-점수를 공개해 실험 과정과 결론을 확인할 수 있게 하고, 제3자 기사 전문이
-중복 저장된 원시 실행 파일만 제외합니다.
+기존 `self_improving_*.py`는 비권장 호환 래퍼입니다. 예전 감정 `--samples 5`
+예시와 개별 출력 파일 지정은 사용할 수 없습니다. 새 CLI와 설정으로 이전하세요.
+구현된 기능과 미검증 항목은 [실험 상태](artifacts/experiment-summary.md)를 참고하세요.
