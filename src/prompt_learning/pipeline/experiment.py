@@ -7,7 +7,7 @@ from hashlib import sha256
 import logging
 from math import isfinite
 from pathlib import Path
-from typing import Callable, ContextManager, Iterator, Protocol
+from typing import Callable, ContextManager, Iterator, Mapping, Protocol
 from uuid import uuid4
 
 import pandas as pd
@@ -16,6 +16,7 @@ from prompt_learning.artifacts import ArtifactWriter
 from prompt_learning.config import ExperimentConfig
 from prompt_learning.datasets.base import content_identity
 from prompt_learning.gateway import ModelGateway
+from prompt_learning.gateway import estimate_cost_usd
 from prompt_learning.models import DatasetSplits, MetricResult, PromptCandidate, RunManifest, SelectionDecision
 from prompt_learning.observability.phoenix import DatasetExample, NoOpObserver, Observer, RunSpan
 from prompt_learning.optimization.optimizer import InvalidCandidateError
@@ -155,6 +156,35 @@ class ExperimentRunner:
         _retain_examples(frame, outputs)
         return outputs
 
+    def _call_attributes(self, outputs: pd.DataFrame, config: ExperimentConfig) -> dict[str, object]:
+        def total(column: str) -> float:
+            return float(outputs[column].fillna(0).sum()) if column in outputs else 0.0
+
+        attributes: dict[str, object] = {
+            "call_count": len(outputs),
+            "cache_hit_count": int(outputs["cached"].fillna(False).astype(bool).sum())
+            if "cached" in outputs else 0,
+            "total_input_tokens": int(total("input_tokens")),
+            "total_output_tokens": int(total("output_tokens")),
+            "latency_ms": total("latency_ms"),
+        }
+        pricing = config.pricing.get(config.models.inference)
+        if pricing is not None:
+            cost = 0
+            for row in outputs.to_dict("records"):
+                cost += estimate_cost_usd(ModelResponse(
+                    "", int(row.get("input_tokens", 0)), int(row.get("output_tokens", 0)),
+                    float(row.get("latency_ms", 0)), bool(row.get("cached", False)),
+                ), pricing) or 0
+            attributes["cost_usd"] = float(cost)
+        return attributes
+
+    @staticmethod
+    def _set_span_attributes(span: object, attributes: Mapping[str, object]) -> None:
+        setter = getattr(span, "set_attributes", None)
+        if setter is not None:
+            setter(attributes)
+
     def _evaluate(
         self, frame: pd.DataFrame, outputs: pd.DataFrame, split: str, config: ExperimentConfig,
     ) -> MetricResult:
@@ -249,8 +279,9 @@ class ExperimentRunner:
                 with self._span(lambda: root.child(f"iteration_{iteration}", {
                     "iteration": iteration, "prompt_hash": current.hash, "prompt_version": current.version,
                 })) as step:
-                    with self._span(lambda: step.child("train_inference", {"split": "train"})):
+                    with self._span(lambda: step.child("train_inference", {"split": "train"})) as train_span:
                         outputs = self._infer(splits.train, current, config)
+                        self._set_span_attributes(train_span, self._call_attributes(outputs, config))
                     with self._span(lambda: step.child("feedback_generation", {"split": "train"})):
                         training_metrics = self._evaluate(splits.train, outputs, "train", config)
                     try:
@@ -274,8 +305,9 @@ class ExperimentRunner:
                         continue
                     with self._span(lambda: step.child("candidate_validation", {
                         "split": "validation", "prompt_hash": candidate.hash, "prompt_version": candidate.version,
-                    })):
+                    })) as candidate_span:
                         candidate_metrics = self._run_subset(splits.validation, candidate, "validation", config)
+                        self._set_span_attributes(candidate_span, candidate_metrics.aggregate)
                     with self._span(lambda: step.child("selection", {"iteration": iteration})):
                         decision = self.selector(selected_metrics, candidate_metrics, current.text, candidate.text)
                     self.artifact_writer.write_iteration(iteration, candidate, candidate_metrics, decision)
@@ -287,8 +319,9 @@ class ExperimentRunner:
 
             with self._span(lambda: root.child("final_test", {
                 "split": "test", "prompt_hash": current.hash, "prompt_version": current.version,
-            })):
+            })) as final_span:
                 test_metrics = self._run_subset(splits.test, current, "test", config)
+                self._set_span_attributes(final_span, test_metrics.aggregate)
             manifest = replace(manifest, finished_at=datetime.now(timezone.utc))
             self.artifact_writer.finalize(manifest, self.baseline_prompt, current, selected_metrics, test_metrics)
             result = ExperimentResult(

@@ -94,6 +94,7 @@ ExperimentResult = Mapping[str, object]
 
 class RunSpan(Protocol):
     def child(self, name: str, attributes: Mapping[str, object]) -> ContextManager["RunSpan"]: ...
+    def set_attributes(self, attributes: Mapping[str, object]) -> None: ...
 
 
 class Observer(Protocol):
@@ -125,6 +126,7 @@ _NUMBER_FIELDS = frozenset({
     "financial_figures_not_applicable_count", "example_count", "regression_count",
     "train_count", "validation_count", "test_count", "excluded_count",
     "configured_sample_count", "configured_samples_per_label",
+    "call_count", "cache_hit_count", "total_input_tokens", "total_output_tokens",
     "train_ratio", "validation_ratio", "test_ratio",
 })
 _SPAN_NAMES = frozenset({
@@ -156,6 +158,9 @@ class _NoOpRunSpan:
     def child(self, name: str, attributes: Mapping[str, object]) -> Iterator[RunSpan]:
         yield self
 
+    def set_attributes(self, attributes: Mapping[str, object]) -> None:
+        return None
+
 
 class NoOpObserver:
     @contextmanager
@@ -172,11 +177,21 @@ class NoOpObserver:
 
 
 class _PhoenixRunSpan:
-    def __init__(self, observer: "PhoenixObserver") -> None:
+    def __init__(self, observer: "PhoenixObserver", span: object) -> None:
         self.observer = observer
+        self.span = span
 
     def child(self, name: str, attributes: Mapping[str, object]) -> ContextManager[RunSpan]:
         return self.observer._span(name, attributes)
+
+    def set_attributes(self, attributes: Mapping[str, object]) -> None:
+        try:
+            setter = getattr(self.span, "set_attribute", None)
+            if setter is not None:
+                for key, value in _safe_attributes(attributes).items():
+                    setter(key, value)
+        except Exception:
+            self.observer._warn("span attribute export")
 
 
 class PhoenixObserver:
@@ -201,13 +216,13 @@ class PhoenixObserver:
             safe_name = (name if name in _SPAN_NAMES or re.fullmatch(r"iteration_[0-9]+", name)
                          else "span-" + sha256(name.encode()).hexdigest())
             manager = self.exporter.start_span(safe_name, _safe_attributes(attributes))
-            manager.__enter__()
+            span = manager.__enter__()
         except Exception:
             self._warn("span export")
             yield _NoOpRunSpan()
             return
         try:
-            yield _PhoenixRunSpan(self)
+            yield _PhoenixRunSpan(self, span)
         finally:
             try:
                 # Never hand application exceptions to instrumentation: it may record
