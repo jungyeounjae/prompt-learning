@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from prompt_learning.artifacts import ArtifactWriter
+from prompt_learning.comparison import write_comparison
 from prompt_learning.config import ExperimentConfig, load_config
 from prompt_learning.datasets.emotion import LABELS, load_emotion_dataset
 from prompt_learning.datasets.financial_news import load_financial_dataset
@@ -196,7 +197,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="optimize on Train, select on Validation, then evaluate Test once")
     run.add_argument("--config", required=True, type=Path, help="experiment YAML path")
+    compare = commands.add_parser("compare", help="compare completed run artifacts")
+    compare.add_argument("runs", nargs="+", type=Path, help="completed run directories")
+    compare.add_argument("--output", type=Path, default=Path("comparison.csv"))
     args = parser.parse_args(argv)
+    if args.command == "compare":
+        try:
+            output = write_comparison(args.runs, args.output)
+        except (OSError, ValueError) as error:
+            print(f"Cannot compare runs: {error}", file=sys.stderr)
+            return 2
+        print(f"Comparison CSV: {output}")
+        print(f"Comparison Markdown: {output.with_suffix('.md')}")
+        return 0
     try:
         config = load_config(args.config)
         _validate_runtime_config(config)

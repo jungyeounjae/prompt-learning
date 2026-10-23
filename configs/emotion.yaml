@@ -3,7 +3,7 @@ dataset:
   name: dair-ai/emotion
   revision: main
   split: train
-  samples_per_label: 20
+  samples_per_label: 100
   sample_count: 60
 seed: 42
 split:

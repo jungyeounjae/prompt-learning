@@ -294,5 +294,5 @@ def test_default_configs_can_build_the_task_without_network(task, tmp_path, monk
     assert runner.gateway.cache_path == Path(".cache/prompt_learning.sqlite3")
     assert (config.split.train, config.split.validation, config.split.test) == (0.6, 0.2, 0.2)
     assert config.seed == 42 and config.failure_rate == 0.05
-    assert config.dataset.samples_per_label == 20 and config.dataset.sample_count == 60
+    assert config.dataset.samples_per_label == (100 if task == "emotion" else 20) and config.dataset.sample_count == 60
     assert config.phoenix.enabled is True
