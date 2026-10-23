@@ -210,6 +210,24 @@ class PhoenixObserver:
                 operation,
             )
 
+    def add_annotation(self, *, span_id: str, name: str, label: str, score: float | None = None) -> None:
+        """Add a safe annotation when a caller has a Phoenix span ID.
+
+        The tracing exporter does not expose span IDs to the pipeline, so this
+        is an explicit integration point for UI/manual or evaluator callbacks.
+        """
+        try:
+            resource = getattr(self.client, "spans", None)
+            method = getattr(resource, "add_span_annotation", None)
+            if method is None:
+                raise AttributeError("Phoenix client has no span annotation API")
+            result = {"label": label}
+            if score is not None:
+                result["score"] = score
+            method(span_id=span_id, annotation_name=name, result=result)
+        except Exception:
+            self._warn("span annotation")
+
     @contextmanager
     def _span(self, name: str, attributes: Mapping[str, object]) -> Iterator[RunSpan]:
         try:

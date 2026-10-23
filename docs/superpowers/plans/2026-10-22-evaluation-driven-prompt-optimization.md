@@ -644,7 +644,8 @@ git commit -m "docs: document guarded prompt optimization experiments"
 - [x] Add multi-seed summary statistics (mean, min, max, population standard deviation).
 - [x] Document the comparison workflow and its no-fabrication rule.
 - [ ] Configure verified model pricing and expose cost in comparison artifacts.
-- [ ] Add failure-case dataset exports and Phoenix annotations.
+- [x] Add failure-case dataset exports.
+- [ ] Connect Phoenix annotations after span IDs are exposed by the pipeline; an explicit `PhoenixObserver.add_annotation` hook now supports the installed SDK API.
 
 - [ ] Run `python -m pytest -v` and retain the passing summary.
 - [ ] Run `python -m build` and confirm both sdist and wheel are created.
