@@ -148,6 +148,15 @@ comparison and sufficient independent data are necessary for that claim.
 
 ## Optional Phoenix
 
+## Current experiment comparison
+
+The recommended emotion workflow uses 100 examples per label and repeats the
+run with seeds 42, 123 and 2024. `prompt-learning compare` reads only completed
+run artifacts and writes a per-run CSV/Markdown table plus a summary CSV with
+mean, min, max and population standard deviation. It never fabricates missing
+metrics. Token, latency and cost fields are added only when the run artifact
+contains them; pricing must be configured from a verified source.
+
 The READMEs contain exact install/start/run/stop commands. `phoenix.enabled` in
 YAML defaults to false; `PHOENIX_ENABLED` overrides it. Disabled means no observer
 network calls. Enabled observer failures produce sanitized warnings and fall

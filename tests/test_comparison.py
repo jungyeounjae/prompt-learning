@@ -18,4 +18,5 @@ def test_comparison_uses_only_completed_artifacts(tmp_path):
     assert [row["seed"] for row in rows] == [42, 123]
     output = write_comparison([first, second], tmp_path / "comparison.csv")
     assert output.exists() and (tmp_path / "comparison.md").exists()
+    assert (tmp_path / "comparison-summary.csv").exists()
     assert "validation_macro_f1" in (tmp_path / "comparison.md").read_text()

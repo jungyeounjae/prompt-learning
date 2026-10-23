@@ -2,6 +2,7 @@
 
 import csv
 import json
+from statistics import fmean, pstdev
 from pathlib import Path
 from typing import Any
 
@@ -53,4 +54,14 @@ def write_comparison(paths: list[Path], output: Path) -> Path:
     for row in rows:
         lines.append("| " + " | ".join("" if row[field] is None else str(row[field]) for field in shown) + " |")
     markdown.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    numeric = ["validation_accuracy", "validation_macro_f1", "test_accuracy", "test_macro_f1"]
+    summary = []
+    for field in numeric:
+        values = [row[field] for row in rows if isinstance(row[field], (int, float))]
+        if values:
+            summary.append({"metric": field, "count": len(values), "mean": fmean(values), "min": min(values), "max": max(values), "stddev": pstdev(values)})
+    with output.with_name(output.stem + "-summary.csv").open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=("metric", "count", "mean", "min", "max", "stddev"))
+        writer.writeheader()
+        writer.writerows(summary)
     return output

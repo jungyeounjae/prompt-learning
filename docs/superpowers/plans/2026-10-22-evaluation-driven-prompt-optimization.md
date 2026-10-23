@@ -636,6 +636,16 @@ git commit -m "docs: document guarded prompt optimization experiments"
 
 ## Implementation Completion Checklist
 
+## Follow-up progress (2026-10-23)
+
+- [x] Increase emotion samples per label to 100.
+- [x] Add reproducible seed configurations for 123 and 2024.
+- [x] Add artifact-only per-run comparison CSV and Markdown output.
+- [x] Add multi-seed summary statistics (mean, min, max, population standard deviation).
+- [x] Document the comparison workflow and its no-fabrication rule.
+- [ ] Configure verified model pricing and expose cost in comparison artifacts.
+- [ ] Add failure-case dataset exports and Phoenix annotations.
+
 - [ ] Run `python -m pytest -v` and retain the passing summary.
 - [ ] Run `python -m build` and confirm both sdist and wheel are created.
 - [ ] Run `prompt-learning --help` without an API key or network.
