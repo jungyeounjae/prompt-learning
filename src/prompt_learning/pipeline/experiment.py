@@ -224,6 +224,7 @@ class ExperimentRunner:
                 run_id, config.task, config, config.dataset.revision,
                 {"inference": config.models.inference, "evaluator": config.models.evaluator,
                  "meta": config.models.meta}, config.seed, started_at, path, input_hashes=input_hashes,
+                dataset_exclusions=splits.exclusions,
             )
             current = self.baseline_prompt
             with self._span(lambda: root.child("baseline_validation", {

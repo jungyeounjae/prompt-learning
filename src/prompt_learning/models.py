@@ -42,6 +42,7 @@ class DatasetSplits:
     train: "pd.DataFrame"
     validation: "pd.DataFrame"
     test: "pd.DataFrame"
+    exclusions: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -81,3 +82,4 @@ class RunManifest:
     artifact_path: Path
     finished_at: datetime | None = None
     input_hashes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    dataset_exclusions: Mapping[str, int] = field(default_factory=dict)

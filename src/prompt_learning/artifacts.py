@@ -98,6 +98,7 @@ def _manifest_payload(manifest: RunManifest) -> dict[str, Any]:
         "finished_at": manifest.finished_at.isoformat() if manifest.finished_at else None,
         "artifact_path": str(manifest.artifact_path),
         "input_hashes": {split: list(hashes) for split, hashes in manifest.input_hashes.items()},
+        "dataset_exclusions": dict(manifest.dataset_exclusions),
     }
 
 

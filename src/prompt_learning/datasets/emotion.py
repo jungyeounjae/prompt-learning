@@ -79,7 +79,19 @@ def load_emotion_dataset(config: ExperimentConfig) -> DatasetSplits:
     dataset = load_dataset(
         config.dataset.name, revision=config.dataset.revision, split=config.dataset.split
     )
-    return split_emotion(
-        dataset.to_pandas(), seed=config.seed, samples_per_label=config.dataset.samples_per_label,
+    frame = dataset.to_pandas()
+    label_column = find_column(frame, ("expected_label", "label"))
+    text_column = find_column(frame, ("text",))
+    normalized_text = frame[text_column].map(lambda value: value.strip() if isinstance(value, str) else value)
+    identities = normalized_text.map(content_identity)
+    labels = frame[label_column].astype(str)
+    conflicting = frame.assign(_identity=identities, _label=labels).groupby("_identity")._label.nunique()
+    conflicting_ids = set(conflicting.loc[conflicting.gt(1)].index)
+    if conflicting_ids:
+        frame = frame.loc[~identities.isin(conflicting_ids)].copy()
+    splits = split_emotion(
+        frame, seed=config.seed, samples_per_label=config.dataset.samples_per_label,
         ratios=config.split,
     )
+    return DatasetSplits(splits.train, splits.validation, splits.test,
+                         exclusions={"conflicting_duplicate_rows": len(conflicting_ids)})

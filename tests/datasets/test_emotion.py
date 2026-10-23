@@ -147,3 +147,23 @@ def test_emotion_loader_respects_revision_split_seed_and_sample_size(monkeypatch
     assert [len(part) for part in subsets(actual)] == [30, 15, 15]
     for part, wanted in zip(subsets(actual), subsets(expected)):
         pd.testing.assert_frame_equal(part, wanted)
+
+
+def test_emotion_loader_excludes_conflicting_duplicate_rows_and_reports_count(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from prompt_learning.config import DatasetConfig, ExperimentConfig, ModelConfig
+    from prompt_learning.datasets.emotion import load_emotion_dataset
+
+    frame = emotion_frame(8)
+    frame = pd.concat([frame, frame.iloc[[0]].assign(label=1)], ignore_index=True)
+    monkeypatch.setitem(sys.modules, "datasets", SimpleNamespace(
+        load_dataset=lambda *args, **kwargs: SimpleNamespace(to_pandas=lambda: frame)
+    ))
+    config = ExperimentConfig(
+        task="emotion", dataset=DatasetConfig("synthetic/emotion", "fixed", samples_per_label=5),
+        models=ModelConfig("fake", "fake", "fake"),
+    )
+    actual = load_emotion_dataset(config)
+    assert actual.exclusions == {"conflicting_duplicate_rows": 1}
+    assert sum(len(part) for part in subsets(actual)) == 30
