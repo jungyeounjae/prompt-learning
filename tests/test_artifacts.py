@@ -74,7 +74,7 @@ def test_emotion_run_writes_required_files_and_redacts_source_text(tmp_path):
     assert writer.finalize(manifest(path, "emotion"), baseline, baseline, metrics, metrics) == path
     expected = {"manifest.json", "baseline_prompt.txt", "selected_prompt.txt", "iteration_history.csv",
                 "validation_metrics.json", "test_metrics.json", "regressions.csv", "report.md",
-                "confusion_matrix.png", "iteration_1_prompt.txt", "iteration_1_validation_metrics.json"}
+                "confusion_matrix.png", "failure_cases.csv", "iteration_1_prompt.txt", "iteration_1_validation_metrics.json"}
     assert expected <= {file.name for file in path.iterdir()}
     assert (path / "confusion_matrix.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     manifest_data = json.loads((path / "manifest.json").read_text(encoding="utf-8"))

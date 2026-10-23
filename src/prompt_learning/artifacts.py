@@ -26,6 +26,7 @@ _REGRESSION_FIELDS = {
     "financial": ("example_id", "baseline_score", "candidate_score", "delta"),
 }
 _HISTORY_FIELDS = ("iteration", "prompt_version", "prompt_hash", "accepted", "reasons")
+_FAILURE_FIELDS = ("example_id", "error", "evaluation_failed", "normalized_output", "expected_label")
 
 
 def _json_bytes(data: object) -> bytes:
@@ -224,6 +225,13 @@ class ArtifactWriter:
         _atomic_write(path / "test_metrics.json", _json_bytes(test))
         _atomic_write(path / "iteration_history.csv", _csv_bytes(_HISTORY_FIELDS, self._history))
         _atomic_write(path / "regressions.csv", _csv_bytes(("iteration", *_REGRESSION_FIELDS[task]), self._regressions))
+        failures = []
+        for _, row in test_metrics.per_example.iterrows():
+            failed = any(row.get(key) not in (None, "", False) for key in ("error", "evaluation_failed"))
+            failed = failed or row.get("normalized_output") == "invalid"
+            if failed:
+                failures.append({key: row.get(key, "") for key in _FAILURE_FIELDS})
+        _atomic_write(path / "failure_cases.csv", _csv_bytes(_FAILURE_FIELDS, failures))
         _atomic_write(path / "report.md", ("\n".join(report_lines) + "\n").encode("utf-8"))
         if task == "emotion" and "confusion_matrix" in test:
             _atomic_write(path / "confusion_matrix.png", _matrix_png(test["confusion_matrix"]))
