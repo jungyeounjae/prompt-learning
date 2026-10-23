@@ -95,6 +95,7 @@ ExperimentResult = Mapping[str, object]
 class RunSpan(Protocol):
     def child(self, name: str, attributes: Mapping[str, object]) -> ContextManager["RunSpan"]: ...
     def set_attributes(self, attributes: Mapping[str, object]) -> None: ...
+    def annotate(self, name: str, label: str, score: float | None = None) -> None: ...
 
 
 class Observer(Protocol):
@@ -161,6 +162,9 @@ class _NoOpRunSpan:
     def set_attributes(self, attributes: Mapping[str, object]) -> None:
         return None
 
+    def annotate(self, name: str, label: str, score: float | None = None) -> None:
+        return None
+
 
 class NoOpObserver:
     @contextmanager
@@ -192,6 +196,12 @@ class _PhoenixRunSpan:
                     setter(key, value)
         except Exception:
             self.observer._warn("span attribute export")
+
+    def annotate(self, name: str, label: str, score: float | None = None) -> None:
+        context = getattr(self.span, "get_span_context", lambda: None)()
+        span_id = getattr(context, "span_id", None)
+        if isinstance(span_id, int) and span_id:
+            self.observer.add_annotation(span_id=f"{span_id:032x}", name=name, label=label, score=score)
 
 
 class PhoenixObserver:

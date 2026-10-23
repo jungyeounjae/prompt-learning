@@ -322,6 +322,11 @@ class ExperimentRunner:
             })) as final_span:
                 test_metrics = self._run_subset(splits.test, current, "test", config)
                 self._set_span_attributes(final_span, test_metrics.aggregate)
+                failures = test_metrics.aggregate.get("failure_count", 0)
+                annotate = getattr(final_span, "annotate", None)
+                if annotate is not None:
+                    annotate("test_quality", "failed" if failures else "passed",
+                             score=float(test_metrics.aggregate.get("accuracy", 0.0)))
             manifest = replace(manifest, finished_at=datetime.now(timezone.utc))
             self.artifact_writer.finalize(manifest, self.baseline_prompt, current, selected_metrics, test_metrics)
             result = ExperimentResult(

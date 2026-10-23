@@ -645,7 +645,7 @@ git commit -m "docs: document guarded prompt optimization experiments"
 - [x] Document the comparison workflow and its no-fabrication rule.
 - [ ] Configure verified model pricing and expose cost in comparison artifacts.
 - [x] Add failure-case dataset exports.
-- [ ] Connect Phoenix annotations after span IDs are exposed by the pipeline; an explicit `PhoenixObserver.add_annotation` hook now supports the installed SDK API.
+- [x] Connect a final Test quality annotation after exposing Phoenix span IDs; unsupported SDK/server calls fail open.
 
 - [ ] Run `python -m pytest -v` and retain the passing summary.
 - [ ] Run `python -m build` and confirm both sdist and wheel are created.
