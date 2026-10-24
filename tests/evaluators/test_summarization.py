@@ -132,6 +132,10 @@ def test_length_check_includes_40_and_800(length, valid):
     ("Revenue rose 5%.", ".5%", True),
     ("Revenue rose 0.5%.", ".5%", False),
     ("Profit was USD 0.5 million.", "$ .5m", False),
+    ("NIFTY returned a negative 21%.", "-21%", False),
+    ("The issue size was Rs 1,844-crore.", "Rs 1,844 crore", False),
+    ("Benchmarks gained over half a per cent.", "0.5%", False),
+    ("Quarterly growth was 19.1 growth versus 9.8 percent.", "19.1%", False),
 ])
 def test_unsupported_currency_or_percentage_is_severe(article, claim, unsupported):
     from prompt_learning.evaluators.summarization import evaluate_summaries

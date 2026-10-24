@@ -81,7 +81,7 @@ _CURRENCY = r"(?:US\$|A\$|USD|EUR|GBP|INR|JPY|CAD|AUD|CNY|CHF|HKD|SGD|Rs\.?|rupe
 _SCALE = r"(?:thousand|million|billion|trillion|crore|lakh|bn|mn|k|m|b|t|cr)"
 # Consume the whole attached suffix, even if its scale is unknown. Without
 # this, e.g. $100widgets would silently compare equal to a supported $100.
-_MONEY_AMOUNT = rf"(?P<number>{_NUMBER})(?:\s*(?P<scale>{_SCALE})(?!\w)|(?P<suffix>[^\W\d]\w*))?"
+_MONEY_AMOUNT = rf"(?P<number>{_NUMBER})(?:(?:\s*-\s*|\s*)(?P<scale>{_SCALE})(?!\w)|(?P<suffix>[^\W\d]\w*))?"
 _PREFIX_MONEY = re.compile(
     rf"(?<!\w)(?P<currency>{_CURRENCY})\s*{_MONEY_AMOUNT}(?!\w|[.,]\d)",
     re.IGNORECASE,
@@ -91,6 +91,14 @@ _SUFFIX_MONEY = re.compile(
     re.IGNORECASE,
 )
 _PERCENT = re.compile(rf"(?<![\w.,])(?P<number>{_NUMBER})\s*(?:%|percent\b|per\s+cent\b|pct\b)", re.IGNORECASE)
+_HALF_PERCENT = re.compile(r"\bhalf\s+(?:a\s+)?(?:percent|per\s+cent|pct)\b", re.IGNORECASE)
+_PAIRED_PERCENT = re.compile(
+    rf"(?<![\w.,])(?P<first>{_NUMBER})\s+"
+    r"(?:growth|return|increase|decrease|rise|fall|decline)\s+"
+    rf"(?:versus|vs\.?|compared\s+(?:with|to))\s+(?P<second>{_NUMBER})\s*"
+    r"(?:%|percent\b|per\s+cent\b|pct\b)",
+    re.IGNORECASE,
+)
 _MULTIPLIERS = {"thousand": 1000, "million": 10**6, "billion": 10**9,
                 "trillion": 10**12, "crore": 10**7, "lakh": 10**5, "bn": 10**9, "mn": 10**6,
                 "k": 1000, "m": 10**6, "b": 10**9, "t": 10**12, "cr": 10**7}
@@ -112,7 +120,13 @@ def _financial_expressions(text: str) -> set[tuple[str, Decimal, str]]:
             suffix = (match.groupdict().get("suffix") or "").casefold()
             expressions.add((currency, amount * _MULTIPLIERS.get(scale, 1), suffix))
     for match in _PERCENT.finditer(text):
-        expressions.add(("percent", Decimal(match["number"].replace(",", "")), ""))
+        amount = abs(Decimal(match["number"].replace(",", "")))
+        expressions.add(("percent", amount, ""))
+    if _HALF_PERCENT.search(text):
+        expressions.add(("percent", Decimal("0.5"), ""))
+    for match in _PAIRED_PERCENT.finditer(text):
+        amount = abs(Decimal(match["first"].replace(",", "")))
+        expressions.add(("percent", amount, ""))
     return expressions
 
 

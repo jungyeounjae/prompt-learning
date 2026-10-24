@@ -37,7 +37,9 @@ def run_financial_inference(
             temperature=temperature,
         )
         try:
-            response = gateway.complete(request, validator=lambda raw: bool(raw.strip()))
+            response = gateway.complete(
+                request, validator=lambda raw: bool(raw.strip()) and 40 <= len(raw) <= 800,
+            )
         except (openai.AuthenticationError, openai.PermissionDeniedError, openai.BadRequestError):
             raise
         except Exception as error:

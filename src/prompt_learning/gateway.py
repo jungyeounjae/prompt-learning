@@ -102,10 +102,10 @@ class ModelGateway:
                     raise
                 self.sleep(float(2 ** attempt))
                 continue
-            break
-
-        if not validator(result.text):
-            raise InvalidModelOutput("Model output failed validation")
+            if validator(result.text):
+                break
+            if attempt == self.max_retries:
+                raise InvalidModelOutput("Model output failed validation")
         with closing(sqlite3.connect(self.cache_path)) as connection, connection:
             connection.execute(
                 """INSERT OR REPLACE INTO responses (key, text, input_tokens, output_tokens)

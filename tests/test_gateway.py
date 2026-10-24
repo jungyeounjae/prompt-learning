@@ -129,14 +129,22 @@ def test_gateway_discards_invalid_cached_value(tmp_path):
     assert result.text == "joy" and result.cached is False
 
 
-def test_invalid_live_output_is_not_cached_or_retried(tmp_path):
+def test_invalid_live_output_is_retried_and_only_valid_replacement_is_cached(tmp_path):
     path = tmp_path / "cache.sqlite"
     client = ScriptedClient(response("bad"), response())
-    gateway = ModelGateway(client, path, sleep=lambda _: pytest.fail("retried"))
+    gateway = ModelGateway(client, path, sleep=lambda _: pytest.fail("format retry slept"))
+    result = gateway.complete(request(), lambda text: text == "joy")
+    assert result.text == "joy" and not result.cached
+    assert gateway.complete(request(), lambda text: text == "joy").cached
+    assert len(client.requests) == 2
+
+
+def test_gateway_stops_after_invalid_output_retry_budget(tmp_path):
+    client = ScriptedClient(*[response("bad") for _ in range(5)])
+    gateway = ModelGateway(client, tmp_path / "cache.sqlite", sleep=lambda _: None)
     with pytest.raises(InvalidModelOutput):
         gateway.complete(request(), lambda text: text == "joy")
-    assert gateway.complete(request(), lambda text: text == "joy").text == "joy"
-    assert len(client.requests) == 2
+    assert len(client.requests) == 4
 
 
 @pytest.mark.parametrize("count", [-1, 4, True])

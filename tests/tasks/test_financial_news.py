@@ -1,10 +1,12 @@
 """Financial inference keeps reference data out of model requests."""
 
+import sqlite3
+
 import pandas as pd
 import pytest
 
 from prompt_learning.gateway import ModelGateway
-from prompt_learning.models import ModelResponse, PromptCandidate
+from prompt_learning.models import ModelRequest, ModelResponse, PromptCandidate
 
 
 def test_render_requires_article_and_preserves_literal_braces():
@@ -20,11 +22,13 @@ def test_render_requires_article_and_preserves_literal_braces():
 def test_inference_preserves_evaluator_inputs_usage_and_identity(tmp_path):
     from prompt_learning.tasks.financial_news import run_financial_inference
 
+    summary = "A useful financial summary with enough detail."
+
     def client(request):
         assert request.task == "financial" and request.model == "offline"
         assert request.temperature == 0.2
         assert request.messages == ({"role": "user", "content": "Summarize: news {literal}"},)
-        return ModelResponse("A useful summary.", 12, 4, 1)
+        return ModelResponse(summary, 12, 4, 1)
 
     frame = pd.DataFrame([{"example_id": "a", "article": "news {literal}",
                            "reference_summary": "private reference"}], index=[7])
@@ -36,7 +40,7 @@ def test_inference_preserves_evaluator_inputs_usage_and_identity(tmp_path):
     row = result.iloc[0]
     assert (row.example_id, row.article, row.reference_summary) == (
         "a", "news {literal}", "private reference")
-    assert row.output == row.raw_output == "A useful summary."
+    assert row.output == row.raw_output == summary
     assert (row.input_tokens, row.output_tokens) == (12, 4)
     assert row.latency_ms >= 0 and not row.cached and row.error is None
 
@@ -58,6 +62,36 @@ def test_empty_and_failed_generations_keep_rows_and_redact_errors(tmp_path, outc
     assert len(result) == 1 and result.iloc[0].output == ""
     assert result.iloc[0].error in ("InvalidModelOutput", "ConnectionError")
     assert "secret" not in str(result.iloc[0].error)
+
+
+def test_inference_evicts_cached_summary_outside_length_contract(tmp_path):
+    from prompt_learning.tasks.financial_news import run_financial_inference
+
+    calls = []
+
+    def client(request):
+        calls.append(request)
+        return ModelResponse("x" * 40, 12, 10, 1.0)
+
+    gateway = ModelGateway(client, tmp_path / "cache.sqlite")
+    request = ModelRequest(
+        task="financial", model="offline",
+        messages=({"role": "user", "content": "article"},), temperature=0.0,
+    )
+    gateway.complete(request, validator=lambda _: True)
+    with sqlite3.connect(tmp_path / "cache.sqlite") as connection:
+        connection.execute("UPDATE responses SET text = ?", ("x" * 801,))
+
+    frame = pd.DataFrame([{
+        "example_id": "a", "article": "article", "reference_summary": "reference",
+    }])
+    result = run_financial_inference(
+        frame, PromptCandidate("{article}", 1, 0), gateway, model="offline",
+    )
+
+    assert result.iloc[0].output == "x" * 40
+    assert not result.iloc[0].cached
+    assert len(calls) == 2
 
 
 def test_invalid_inputs_fail_before_inference(tmp_path):
