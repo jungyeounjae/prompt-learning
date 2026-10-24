@@ -87,8 +87,8 @@ entries; there is no invented prompt or candidate metric file for those attempts
 The OpenAI client disables nested SDK retries. The shared gateway retries
 connection/time-out errors, HTTP 429 and HTTP 5xx with exponential backoff, up to
 three retries (four attempts). Authentication, permission and bad requests fail
-immediately. Invalid completed output fails validation without automatic schema
-repair retries. Recoverable example failures retain their denominator; a subset
+immediately. Completed outputs that fail the task validator are regenerated within
+the same retry budget, without attempting automatic schema repair. Recoverable example failures retain their denominator; a subset
 failure rate over 5% aborts the run. With tiny subsets, one failure can exceed that
 limit. Artifact-write failure also fails the run; partial files can remain.
 
