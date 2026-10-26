@@ -43,6 +43,9 @@ class ObserverSpy(NoOpObserver):
     def child(self, name, attributes):
         return self._span(name, attributes)
 
+    def set_attributes(self, attributes):
+        self.spans[-1][1].update(attributes)
+
     def sync_dataset(self, name, version, examples):
         self.datasets.append((name, version, examples))
         return name
@@ -85,8 +88,8 @@ def harness(tmp_path, *, accepted=(True, False, True), failures=None, observer=N
         return result
 
     class Optimizer:
-        def optimize(self, current, training_result, required_placeholder):
-            optimizer_calls.append((current, training_result, required_placeholder))
+        def optimize(self, current, training_result, required_placeholder, *, training_inputs):
+            optimizer_calls.append((current, training_result, required_placeholder, training_inputs))
             events.append(("optimize", current.text))
             return PromptCandidate(f"candidate-{len(optimizer_calls)} {{text}}", current.version + 1,
                                    len(optimizer_calls))
@@ -111,10 +114,12 @@ def test_runner_uses_train_only_for_optimizer(tmp_path):
     h = harness(tmp_path)
     result = h.runner.run(h.config)
     assert len(h.optimizer_calls) == 3
-    for _, metrics, placeholder in h.optimizer_calls:
+    for _, metrics, placeholder, training_inputs in h.optimizer_calls:
         assert metrics.per_example.example_id.str.startswith("train-").all()
         assert "validation-" not in metrics.feedback and "test-" not in metrics.feedback
         assert placeholder == "{text}"
+        pd.testing.assert_frame_equal(training_inputs, h.splits.train)
+        assert training_inputs.example_id.str.startswith("train-").all()
     assert result.candidate_attempts == 3
     assert result.manifest.config.max_iterations == 3
 
@@ -211,6 +216,17 @@ def test_dropped_rows_are_rejected_before_metrics_can_hide_failures(tmp_path, bo
         h.runner.evaluator = drop
     with pytest.raises(ValueError, match="retain every example"):
         h.runner.run(h.config)
+
+
+@pytest.mark.parametrize("accepted", [True, False])
+def test_selection_span_records_accepted_decision(tmp_path, accepted):
+    h = harness(tmp_path, accepted=(accepted,))
+    h.runner.run(h.config)
+
+    selection_attributes = next(
+        attributes for name, attributes, _ in h.tracing.spans if name == "selection"
+    )
+    assert selection_attributes == {"iteration": 1, "accepted": accepted}
 
 
 def test_runner_emits_approved_tree_and_only_safe_metadata(tmp_path):
@@ -329,8 +345,9 @@ def test_financial_pipeline_uses_real_evaluator_and_counts_judge_failures(tmp_pa
             return ModelResponse(summary, 4, 3, 0.5)
 
     class Optimizer:
-        def optimize(self, current, training_result, required_placeholder):
+        def optimize(self, current, training_result, required_placeholder, *, training_inputs):
             assert required_placeholder == "{article}"
+            pd.testing.assert_frame_equal(training_inputs, splits.train)
             training_results.append(training_result)
             return PromptCandidate("Summarize: {article}", 1, 1)
 
@@ -391,11 +408,13 @@ def test_invalid_candidate_is_archived_without_validation_and_later_attempt_runs
     calls = []
 
     class InvalidThenValid:
-        def optimize(self, current, training_result, required_placeholder):
+        def optimize(self, current, training_result, required_placeholder, *, training_inputs):
             calls.append(current.text)
             if len(calls) == 1:
                 raise InvalidCandidateError(reason)
-            return original.optimize(current, training_result, required_placeholder)
+            return original.optimize(
+                current, training_result, required_placeholder, training_inputs=training_inputs,
+            )
 
     h.runner.optimizer = InvalidThenValid()
     result = h.runner.run(h.config)
@@ -422,7 +441,7 @@ def test_runner_rejects_malformed_injected_candidate_before_validation(tmp_path,
     h = harness(tmp_path, accepted=(True,))
 
     class Optimizer:
-        def optimize(self, *args):
+        def optimize(self, *args, **kwargs):
             return PromptCandidate(text, 1, 1)
 
     h.runner.optimizer = Optimizer()

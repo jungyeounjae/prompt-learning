@@ -33,6 +33,7 @@ _METADATA_METRICS = (
 class Optimizer(Protocol):
     def optimize(
         self, current: PromptCandidate, training_result: MetricResult, required_placeholder: str,
+        *, training_inputs: pd.DataFrame,
     ) -> PromptCandidate: ...
 
 
@@ -286,7 +287,9 @@ class ExperimentRunner:
                         training_metrics = self._evaluate(splits.train, outputs, "train", config)
                     try:
                         with self._span(lambda: step.child("prompt_optimization", {"model": config.models.meta})):
-                            candidate = self.optimizer.optimize(current, training_metrics, placeholder)
+                            candidate = self.optimizer.optimize(
+                                current, training_metrics, placeholder, training_inputs=splits.train,
+                            )
                             if not isinstance(candidate.text, str) or not candidate.text.strip():
                                 raise InvalidCandidateError("empty_output")
                             if placeholder not in candidate.text:
@@ -308,8 +311,11 @@ class ExperimentRunner:
                     })) as candidate_span:
                         candidate_metrics = self._run_subset(splits.validation, candidate, "validation", config)
                         self._set_span_attributes(candidate_span, candidate_metrics.aggregate)
-                    with self._span(lambda: step.child("selection", {"iteration": iteration})):
+                    with self._span(lambda: step.child("selection", {
+                        "iteration": iteration,
+                    })) as selection_span:
                         decision = self.selector(selected_metrics, candidate_metrics, current.text, candidate.text)
+                        self._set_span_attributes(selection_span, {"accepted": decision.accepted})
                     self.artifact_writer.write_iteration(iteration, candidate, candidate_metrics, decision)
                     decisions.append(decision)
                     self._record(dataset_ids["validation"], run_id, "candidate", candidate,

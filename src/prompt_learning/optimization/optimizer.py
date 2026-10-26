@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from typing import Any
 
+import pandas as pd
+
 from prompt_learning.models import MetricResult, PromptCandidate
 
 
@@ -33,8 +35,31 @@ class PromptOptimizer:
 
     def optimize(
         self, current: PromptCandidate, training_result: MetricResult, required_placeholder: str,
+        *, training_inputs: pd.DataFrame,
     ) -> PromptCandidate:
-        dataset = training_result.per_example.loc[:, ["output", "feedback"]].reset_index(drop=True).copy(deep=True)
+        source_columns = {"{text}": "text", "{article}": "article"}
+        try:
+            source_column = source_columns[required_placeholder]
+        except KeyError as error:
+            raise ValueError(f"Unsupported required placeholder: {required_placeholder}") from error
+
+        scored = training_result.per_example
+        for name, frame in (("training inputs", training_inputs), ("training result", scored)):
+            if ("example_id" not in frame or frame["example_id"].isna().any()
+                    or frame["example_id"].duplicated().any()):
+                raise ValueError(f"{name} must contain a non-null, unique example_id")
+        if source_column not in training_inputs:
+            raise ValueError(f"training inputs must contain {source_column}")
+        missing_ids = set(scored["example_id"]) - set(training_inputs["example_id"])
+        if missing_ids:
+            raise ValueError("training inputs must contain every evaluated example")
+
+        source_by_id = training_inputs.set_index("example_id")[source_column]
+        dataset = pd.DataFrame({
+            source_column: scored["example_id"].map(source_by_id).tolist(),
+            "output": scored["output"].tolist(),
+            "feedback": scored["feedback"].tolist(),
+        })
         optimizer = self.optimizer_factory(
             prompt=current.text, model_choice=self.meta_model, openai_api_key=self.api_key,
         )
